@@ -12,39 +12,21 @@ export function reflect(config,i){
  out[i]={b:2n*b-config[i].b,bx:sub(mulInt(bx,2n),config[i].bx),by:sub(mulInt(by,2n),config[i].by)};
  return out;
 }
-
 export function circle(c){return {b:c.b,bx:c.bx,by:c.by};}
 export function toFloat(c){return {x:num(c.bx)/Number(c.b),y:num(c.by)/Number(c.b),r:1/Math.abs(Number(c.b)),b:c.b};}
-
 export function createTree(config){return {config,children:null};}
-function expand(node){
- if(!node.children) node.children=[0,1,2,3].map(i=>createTree(reflect(node.config,i)));
-}
-function visible(c,v,m){
- const x=toFloat(c);
- return Number.isFinite(x.x)&&Number.isFinite(x.y)&&Number.isFinite(x.r)&&!(x.x+x.r<v.left-m||x.x-x.r>v.right+m||x.y+x.r<v.bottom-m||x.y-x.r>v.top+m);
-}
-
+function expand(node){if(node.children===null)node.children=[0,1,2,3].map(i=>createTree(reflect(node.config,i)));}
+function visible(c,v,m){const x=toFloat(c);return Number.isFinite(x.x)&&Number.isFinite(x.y)&&Number.isFinite(x.r)&&!(x.x+x.r<v.left-m||x.x-x.r>v.right+m||x.y+x.r<v.bottom-m||x.y-x.r>v.top+m);}
 export function visibleTree(root,viewport,scale){
- const result=[],seen=new Set();
- let visited=0;
- function add(c){
-  if(!visible(c,viewport,20/scale))return;
-  const k=key(c);
-  if(!seen.has(k)){seen.add(k);result.push(circle(c));}
- }
+ const result=[],seen=new Set();let expanded=0;
+ function add(c){if(!visible(c,viewport,20/scale))return;const k=key(c);if(!seen.has(k)){seen.add(k);result.push(circle(c));}}
  function walk(node,depth){
-  if(visited++>20000||depth>60)return;
+  if(depth>80||expanded>3000)return;
   node.config.forEach(add);
-  expand(node);
-  for(const child of node.children){
-   if(child.config.some(c=>visible(c,viewport,20/scale))) walk(child,depth+1);
-  }
+  if(node.children===null)expand(node);
+  expanded++;
+  for(const child of node.children)if(child.config.some(c=>visible(c,viewport,20/scale)))walk(child,depth+1);
  }
- walk(root,0);
- return result;
+ walk(root,0);return result;
 }
-
-export function generateVisible(config,viewport,scale){
- return visibleTree(createTree(config),viewport,scale);
-}
+export function generateVisible(config,viewport,scale){return visibleTree(createTree(config),viewport,scale);}
