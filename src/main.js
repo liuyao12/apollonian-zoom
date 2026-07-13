@@ -62,7 +62,20 @@ function draw(){
  }
 }
 
-canvas.addEventListener('wheel',e=>{e.preventDefault();const f=Math.exp(-e.deltaY*.001);const wx=(e.clientX-offsetX)/zoom,wy=-(e.clientY-offsetY)/zoom;zoom*=f;offsetX=e.clientX-wx*zoom;offsetY=e.clientY+wy*zoom;update();draw();},{passive:false});
+canvas.addEventListener('wheel',e=>{
+ e.preventDefault();
+ const rect=canvas.getBoundingClientRect();
+ const mx=e.clientX-rect.left;
+ const my=e.clientY-rect.top;
+ const f=Math.exp(-e.deltaY*.001);
+ const wx=(mx-offsetX)/zoom;
+ const wy=-(my-offsetY)/zoom;
+ zoom*=f;
+ offsetX=mx-wx*zoom;
+ offsetY=my+wy*zoom;
+ update();
+ draw();
+},{passive:false});
 canvas.onmousedown=e=>{dragging=true;last=[e.clientX,e.clientY]};
 canvas.onmouseup=()=>dragging=false;
 canvas.onmousemove=e=>{if(!dragging)return;offsetX+=e.clientX-last[0];offsetY+=e.clientY-last[1];last=[e.clientX,e.clientY];update();draw()};
