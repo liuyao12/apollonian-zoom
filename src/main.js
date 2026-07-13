@@ -19,7 +19,7 @@ addEventListener('resize',resize);
 
 function init(){
   try {
-    circles=generate(presets.Classic,8);
+    circles=generate(presets["Classic (-1,2,2,3)"],8);
     offsetX=canvas.width/2;
     offsetY=canvas.height/2;
     error=null;
