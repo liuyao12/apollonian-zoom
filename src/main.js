@@ -69,14 +69,15 @@ function draw(){
     ctx.beginPath();
     ctx.arc(x,y,r,0,2*Math.PI);
     ctx.stroke();
-    if(r>18){
-      ctx.font=Math.min(r*.35,22)+'px sans-serif';
-      if(c.b<0n){
-        // put the enclosing circle's label at 45 degrees outside
-        ctx.fillText(c.b.toString(),x+r/Math.SQRT2+10,y-r/Math.SQRT2-10);
-      } else {
-        ctx.fillText(c.b.toString(),x,y);
-      }
+
+    const fontSize=Math.max(12,Math.min(r*0.5,40));
+    ctx.font=fontSize+'px sans-serif';
+    if(c.b<0n){
+      // Large label outside the enclosing circle at 45 degrees.
+      const d=Math.max(30,r*0.15);
+      ctx.fillText(c.b.toString(),x+r/Math.SQRT2+d,y-r/Math.SQRT2-d);
+    } else if(r>10){
+      ctx.fillText(c.b.toString(),x,y);
     }
   }
 }
