@@ -3,7 +3,6 @@ import { presets } from './presets.js';
 
 const canvas=document.getElementById('canvas');
 const ctx=canvas.getContext('2d');
-
 let zoom=600;
 let offsetX=0, offsetY=0;
 let circles=[];
@@ -41,19 +40,16 @@ function toFloat(c){
 function draw(){
   ctx.fillStyle='white';
   ctx.fillRect(0,0,canvas.width,canvas.height);
-
   if(error){
     ctx.fillStyle='red';
     ctx.font='16px monospace';
     ctx.fillText(error,20,40);
     return;
   }
-
   ctx.strokeStyle='black';
   ctx.fillStyle='black';
   ctx.textAlign='center';
   ctx.textBaseline='middle';
-
   for(const exact of circles){
     const c=toFloat(exact);
     const x=offsetX+c.x*zoom;
@@ -65,7 +61,11 @@ function draw(){
     ctx.stroke();
     if(r>18){
       ctx.font=Math.min(r*.35,22)+'px sans-serif';
-      ctx.fillText(c.b.toString(),x,y);
+      if(c.b<0n){
+        ctx.fillText(c.b.toString(),x,y-r-12);
+      } else {
+        ctx.fillText(c.b.toString(),x,y);
+      }
     }
   }
 }
