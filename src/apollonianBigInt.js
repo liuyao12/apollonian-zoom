@@ -19,7 +19,12 @@ export function initialConfiguration(){
 }
 
 export function circle(c){
- return {x:Number(c.bx)/Number(c.b),y:Number(c.by)/Number(c.b),r:1/Math.abs(Number(c.b))};
+ return {
+   x:Number(c.bx)/Number(c.b),
+   y:Number(c.by)/Number(c.b),
+   r:1/Math.abs(Number(c.b)),
+   b:c.b
+ };
 }
 
 export function generate(config,depth){
