@@ -14,6 +14,15 @@ export function reflect(config,i){
 }
 export function circle(c){return {b:c.b,bx:c.bx,by:c.by};}
 export function toFloat(c){return {x:num(c.bx)/Number(c.b),y:num(c.by)/Number(c.b),r:1/Math.abs(Number(c.b)),b:c.b};}
+
+export function generate(config,depth){
+ const result=[],seen=new Set();
+ function add(c){const k=key(c);if(!seen.has(k)){seen.add(k);result.push(circle(c));}}
+ function walk(q,n){q.forEach(add);if(n>0)for(let i=0;i<4;i++)walk(reflect(q,i),n-1);}
+ walk(config,depth);
+ return result;
+}
+
 export function createTree(config){return {config,children:null};}
 function expand(node){if(node.children===null)node.children=[0,1,2,3].map(i=>createTree(reflect(node.config,i)));}
 function visible(c,v,m){const x=toFloat(c);return Number.isFinite(x.x)&&Number.isFinite(x.y)&&Number.isFinite(x.r)&&!(x.x+x.r<v.left-m||x.x-x.r>v.right+m||x.y+x.r<v.bottom-m||x.y-x.r>v.top+m);}
