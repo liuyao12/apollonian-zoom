@@ -3,22 +3,25 @@ import { presets } from './presets.js';
 
 const canvas=document.getElementById('canvas');
 const ctx=canvas.getContext('2d');
+const selector=document.getElementById('preset');
+
+for (const name of Object.keys(presets)) {
+  const option=document.createElement('option');
+  option.value=name;
+  option.textContent=name;
+  selector.appendChild(option);
+}
+
 let zoom=600;
 let offsetX=0, offsetY=0;
 let circles=[];
 let error=null;
 let dragging=false,last=[0,0];
+let current=Object.keys(presets)[0];
 
-function resize(){
-  canvas.width=innerWidth;
-  canvas.height=innerHeight;
-  draw();
-}
-addEventListener('resize',resize);
-
-function init(){
+function rebuild(){
   try {
-    circles=generate(presets["Classic (-1,2,2,3)"],8);
+    circles=generate(presets[current],8);
     offsetX=canvas.width/2;
     offsetY=canvas.height/2;
     error=null;
@@ -28,13 +31,20 @@ function init(){
   draw();
 }
 
+selector.onchange=()=>{
+  current=selector.value;
+  rebuild();
+};
+
+function resize(){
+  canvas.width=innerWidth;
+  canvas.height=innerHeight;
+  draw();
+}
+addEventListener('resize',resize);
+
 function toFloat(c){
-  return {
-    x:Number(c.bx)/Number(c.b),
-    y:Number(c.by)/Number(c.b),
-    r:1/Math.abs(Number(c.b)),
-    b:c.b
-  };
+  return {x:Number(c.bx)/Number(c.b),y:Number(c.by)/Number(c.b),r:1/Math.abs(Number(c.b)),b:c.b};
 }
 
 function draw(){
@@ -62,7 +72,8 @@ function draw(){
     if(r>18){
       ctx.font=Math.min(r*.35,22)+'px sans-serif';
       if(c.b<0n){
-        ctx.fillText(c.b.toString(),x,y-r-12);
+        // put the enclosing circle's label at 45 degrees outside
+        ctx.fillText(c.b.toString(),x+r/Math.SQRT2+10,y-r/Math.SQRT2-10);
       } else {
         ctx.fillText(c.b.toString(),x,y);
       }
@@ -93,4 +104,4 @@ canvas.onmousemove=e=>{
 };
 
 resize();
-init();
+rebuild();
