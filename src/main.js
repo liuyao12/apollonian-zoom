@@ -3,7 +3,6 @@ import { presets } from './presets.js';
 
 const canvas=document.getElementById('canvas');
 const ctx=canvas.getContext('2d');
-
 let zoom=420;
 let offsetX=0, offsetY=0;
 let dragging=false,last=[0,0];
@@ -12,10 +11,8 @@ let circles=[];
 
 function rebuild(){
   circles=generate(current,8);
-  // center on dense part rather than bounding outer circle
   offsetX=canvas.width/2;
   offsetY=canvas.height/2;
-  zoom=420;
 }
 
 function resize(){canvas.width=innerWidth;canvas.height=innerHeight;draw();}
@@ -28,10 +25,17 @@ function project(c){
 function draw(){
  ctx.fillStyle='#02040a';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.strokeStyle='#9ddcff';
+ ctx.fillStyle='#ffffff';
+ ctx.textAlign='center';
+ ctx.textBaseline='middle';
  for(const c of circles){
   const p=project(c);
   if(p.r>0.2 && p.r<canvas.width*3){
    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,2*Math.PI);ctx.stroke();
+   if(p.r>12){
+    ctx.font=Math.min(Math.max(p.r*0.35,10),24)+'px sans-serif';
+    ctx.fillText(c.b.toString(),p.x,p.y);
+   }
   }
  }
 }
@@ -54,8 +58,7 @@ canvas.onmousemove=e=>{
  if(!dragging)return;
  offsetX+=e.clientX-last[0];
  offsetY+=e.clientY-last[1];
- last=[e.clientX,e.clientY];
- draw();
+ last=[e.clientX,e.clientY];draw();
 };
 
 resize();
