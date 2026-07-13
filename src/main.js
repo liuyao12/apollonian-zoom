@@ -1,10 +1,9 @@
-import {visibleTree,createTree,toFloat,generate} from './apollonianBigInt.js';
+import {generate,toFloat} from './apollonianBigInt.js';
 import {presets} from './presets.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
 let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[],dragging=false,last=[0,0];
-let root=null;
 
 function fitOuterFor(config,w,h){
  const outer=config.find(c=>c.b<0n)||config[0];
@@ -38,9 +37,9 @@ function renderCards(){
 }
 
 function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/zoom,top:offsetY/zoom,bottom:(offsetY-canvas.height)/zoom};}
-function update(){circles=visibleTree(root,viewport(),zoom);}
+function update(){circles=generate(presets[current],5);}
 function fitOuter(){const c=fitOuterFor(presets[current],canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
-function rebuild(){fitOuter();root=createTree(presets[current]);update();draw();}
+function rebuild(){fitOuter();update();draw();}
 function resize(){canvas.width=innerWidth-150;canvas.height=innerHeight;rebuild();}
 addEventListener('resize',resize);
 
