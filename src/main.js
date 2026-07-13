@@ -1,4 +1,4 @@
-import {visibleTree,createTree,toFloat} from './apollonianBigInt.js';
+import {visibleTree,createTree,toFloat,generate} from './apollonianBigInt.js';
 import {presets} from './presets.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
@@ -17,10 +17,12 @@ function drawThumbnail(canvasEl,config){
  const cctx=canvasEl.getContext('2d');
  cctx.fillStyle='white';cctx.fillRect(0,0,canvasEl.width,canvasEl.height);
  const cam=fitOuterFor(config,canvasEl.width,canvasEl.height);
- const vp={left:(0-cam.offsetX)/cam.zoom,right:(canvasEl.width-cam.offsetX)/cam.zoom,top:cam.offsetY/cam.zoom,bottom:(cam.offsetY-canvasEl.height)/cam.zoom};
- const cs=visibleTree(createTree(config),vp,cam.zoom);
+ const cs=generate(config,4);
  cctx.strokeStyle='black';
- for(const e of cs){const c=toFloat(e),x=cam.offsetX+c.x*cam.zoom,y=cam.offsetY-c.y*cam.zoom,r=c.r*cam.zoom;if(Number.isFinite(x+y+r)){cctx.beginPath();cctx.arc(x,y,r,0,2*Math.PI);cctx.stroke();}}
+ for(const e of cs){
+  const c=toFloat(e),x=cam.offsetX+c.x*cam.zoom,y=cam.offsetY-c.y*cam.zoom,r=c.r*cam.zoom;
+  if(Number.isFinite(x+y+r)){cctx.beginPath();cctx.arc(x,y,r,0,2*Math.PI);cctx.stroke();}
+ }
 }
 
 function renderCards(){
