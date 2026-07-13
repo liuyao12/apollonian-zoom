@@ -18,13 +18,20 @@ addEventListener('resize',resize);
 
 function draw(){
  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
- if(error){ctx.fillStyle='red';ctx.fillText(error,20,40);return;}
+ if(error){ctx.fillStyle='red';ctx.font='16px monospace';ctx.fillText(error,20,40);return;}
  ctx.strokeStyle='black';ctx.fillStyle='black';ctx.textAlign='center';ctx.textBaseline='middle';
- for(const exact of circles){const c=toFloat(exact);const x=offsetX+c.x*zoom,y=offsetY-c.y*zoom,r=c.r*zoom;
+ for(const exact of circles){
+  const c=toFloat(exact);
+  if(!Number.isFinite(c.x)||!Number.isFinite(c.y)||!Number.isFinite(c.r))continue;
+  const x=offsetX+c.x*zoom,y=offsetY-c.y*zoom,r=c.r*zoom;
+  if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(r))continue;
   if(x+r<0||x-r>canvas.width||y+r<0||y-r>canvas.height)continue;
   ctx.beginPath();ctx.arc(x,y,r,0,2*Math.PI);ctx.stroke();
-  if(c.b<0n){ctx.font=Math.max(18,r*.25)+'px sans-serif';ctx.fillText('-1',x+r/Math.SQRT2+20,y-r/Math.SQRT2-20);}
-  else if(r>10){ctx.font=Math.max(9,Math.min(r*.4,40))+'px sans-serif';ctx.fillText(c.b.toString(),x,y);}
+  if(c.b<0n){
+    const fs=Math.max(18,r*.28),d=r+fs*1.4;
+    ctx.font=fs+'px sans-serif';
+    ctx.fillText('-1',x+d/Math.SQRT2,y-d/Math.SQRT2);
+  } else if(r>10){ctx.font=Math.max(9,Math.min(r*.4,40))+'px sans-serif';ctx.fillText(c.b.toString(),x,y);}
  }
 }
 
