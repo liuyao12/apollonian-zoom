@@ -1,9 +1,10 @@
-import {generate,toFloat} from './apollonianBigInt.js';
+import {toFloat,createTree,generateVisible} from './apollonianBigInt.js';
 import {presets} from './presets.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
 let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[],dragging=false,last=[0,0];
+let root=createTree(presets[current]);
 
 function fitOuterFor(config,w,h){
  const outer=config.find(c=>c.b<0n)||config[0];
@@ -16,7 +17,7 @@ function drawThumbnail(canvasEl,config){
  const cctx=canvasEl.getContext('2d');
  cctx.fillStyle='white';cctx.fillRect(0,0,canvasEl.width,canvasEl.height);
  const cam=fitOuterFor(config,canvasEl.width,canvasEl.height);
- const cs=generate(config,4);
+ const cs=generateVisible(createTree(config),{left:-10,right:10,top:10,bottom:-10},1);
  cctx.strokeStyle='black';
  for(const e of cs){
   const c=toFloat(e),x=cam.offsetX+c.x*cam.zoom,y=cam.offsetY-c.y*cam.zoom,r=c.r*cam.zoom;
@@ -31,13 +32,13 @@ function renderCards(){
   const t=document.createElement('canvas');t.width=130;t.height=100;t.className='thumb';
   const label=document.createElement('div');label.className='label';label.textContent=name;
   d.appendChild(t);d.appendChild(label);
-  d.onclick=()=>{current=name;rebuild();renderCards();};
+  d.onclick=()=>{current=name;root=createTree(presets[current]);rebuild();renderCards();};
   panel.appendChild(d);drawThumbnail(t,presets[name]);
  }
 }
 
 function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/zoom,top:offsetY/zoom,bottom:(offsetY-canvas.height)/zoom};}
-function update(){circles=generate(presets[current],5);}
+function update(){circles=generateVisible(root,viewport(),zoom);}
 function fitOuter(){const c=fitOuterFor(presets[current],canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
 function rebuild(){fitOuter();update();draw();}
 function resize(){canvas.width=innerWidth-150;canvas.height=innerHeight;rebuild();}
