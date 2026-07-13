@@ -3,20 +3,31 @@ import { presets } from './presets.js';
 
 const canvas=document.getElementById('canvas');
 const ctx=canvas.getContext('2d');
+
 let zoom=600;
 let offsetX=0, offsetY=0;
-let dragging=false,last=[0,0];
 let circles=[];
+let error=null;
+let dragging=false,last=[0,0];
 
-function rebuild(){
-  circles=generate(presets.Classic,8);
-  offsetX=canvas.width/2;
-  offsetY=canvas.height/2;
+function resize(){
+  canvas.width=innerWidth;
+  canvas.height=innerHeight;
   draw();
 }
-
-function resize(){canvas.width=innerWidth;canvas.height=innerHeight;draw();}
 addEventListener('resize',resize);
+
+function init(){
+  try {
+    circles=generate(presets.Classic,8);
+    offsetX=canvas.width/2;
+    offsetY=canvas.height/2;
+    error=null;
+  } catch(e){
+    error=e.stack || String(e);
+  }
+  draw();
+}
 
 function toFloat(c){
   return {
@@ -30,6 +41,14 @@ function toFloat(c){
 function draw(){
   ctx.fillStyle='white';
   ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  if(error){
+    ctx.fillStyle='red';
+    ctx.font='16px monospace';
+    ctx.fillText(error,20,40);
+    return;
+  }
+
   ctx.strokeStyle='black';
   ctx.fillStyle='black';
   ctx.textAlign='center';
@@ -74,4 +93,4 @@ canvas.onmousemove=e=>{
 };
 
 resize();
-rebuild();
+init();
