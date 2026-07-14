@@ -3,6 +3,7 @@ import {presets} from './presets.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
+const MIN_CIRCLE_RADIUS_PX=2;
 let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[],dragging=false,last=[0,0];
 let root=createTree(presets[current]);
 
@@ -41,7 +42,7 @@ function renderCards(){
 }
 
 function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/zoom,top:offsetY/zoom,bottom:(offsetY-canvas.height)/zoom};}
-function update(){circles=visibleTree(root,viewport(),zoom);}
+function update(){circles=visibleTree(root,viewport(),zoom,MIN_CIRCLE_RADIUS_PX);}
 function fitOuter(){const c=fitOuterFor(presets[current],canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
 function rebuild(){fitOuter();update();draw();}
 function resize(){canvas.width=innerWidth-150;canvas.height=innerHeight;rebuild();}
