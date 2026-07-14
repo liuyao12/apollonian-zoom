@@ -9,6 +9,7 @@ const homeButton=document.getElementById('home-button');
 const MIN_CIRCLE_RADIUS_PX=2;
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
+const HOME_RECENTER_DURATION_MS=650;
 let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[];
 let root=createTree(presets[current]);
 const pointers=new Map();let gesture=null;
@@ -203,17 +204,29 @@ function animateHome(){
  const zoomDistance=Math.abs(logEnd-logStart);
  // Match a steady, ordinary mouse-wheel pace (about six 100-unit notches per
  // second) using the same sensitivity as manual zooming.
- const duration=Math.max(HOME_MIN_DURATION_MS,
+ const zoomDuration=zoomDistance<1e-9?0:Math.max(HOME_MIN_DURATION_MS,
   zoomDistance/(WHEEL_ZOOM_SENSITIVITY*HOME_WHEEL_DELTA_PER_SECOND)*1000);
+ const centerDistance=Math.hypot(end.centerX-start.centerX,end.centerY-start.centerY);
+ const panDuration=centerDistance<1e-12?0:HOME_RECENTER_DURATION_MS;
+ const duration=zoomDuration+panDuration;
  function step(now){
-  // Linear progress in log-zoom space keeps the apparent shrink rate steady.
-  const t=Math.min(1,(now-started)/duration);
-  zoom=Math.exp(logStart+(logEnd-logStart)*t);
-  const centerX=start.centerX+(end.centerX-start.centerX)*t;
-  const centerY=start.centerY+(end.centerY-start.centerY)*t;
+  const elapsed=now-started;
+  let centerX=start.centerX,centerY=start.centerY;
+  if(elapsed<zoomDuration){
+   // Keep the viewed point centered while circles shrink at a steady rate.
+   const t=elapsed/zoomDuration;
+   zoom=Math.exp(logStart+(logEnd-logStart)*t);
+  }else{
+   // Once the home scale is reached, recenter the already-visible packing.
+   zoom=end.zoom;
+   const t=panDuration?Math.min(1,(elapsed-zoomDuration)/panDuration):1;
+   const eased=t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+   centerX=start.centerX+(end.centerX-start.centerX)*eased;
+   centerY=start.centerY+(end.centerY-start.centerY)*eased;
+  }
   offsetX=canvas.width/2-centerX*zoom;offsetY=canvas.height/2+centerY*zoom;
   update();draw();
-  if(t<1)homeFrame=requestAnimationFrame(step);
+  if(elapsed<duration)homeFrame=requestAnimationFrame(step);
   else{zoom=target.zoom;offsetX=target.offsetX;offsetY=target.offsetY;homeFrame=null;update();draw();}
  }
  homeFrame=requestAnimationFrame(step);
