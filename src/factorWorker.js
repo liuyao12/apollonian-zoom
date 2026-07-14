@@ -1,9 +1,9 @@
-import {formatFactorLines} from './factorization.js';
+import {formatFactorTerms} from './factorization.js';
 
 self.onmessage=e=>{
  const {value}=e.data;
- let lines;
- try{lines=formatFactorLines(BigInt(value));}
- catch{lines=[value];}
- self.postMessage({value,lines});
+ let terms;
+ try{terms=formatFactorTerms(BigInt(value));}
+ catch{terms=[value];}
+ self.postMessage({value,terms});
 };

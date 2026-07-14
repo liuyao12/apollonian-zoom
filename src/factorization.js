@@ -61,7 +61,7 @@ export function factorize(value,maxIterations=500000){
 const superscripts={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
 function superscript(n){return String(n).split('').map(d=>superscripts[d]).join('');}
 
-export function formatFactorLines(value){
+export function formatFactorTerms(value){
  const n=BigInt(value),factors=factorize(n);
  if(n>=-1n&&n<=1n)return [n.toString()];
  const powers=[];
@@ -70,7 +70,7 @@ export function formatFactorLines(value){
   if(last&&last.factor===factor)last.exponent++;
   else powers.push({factor,exponent:1});
  }
- const lines=powers.map(({factor,exponent},i)=>(i||n<0n?'· ':'')+factor+(exponent>1?superscript(exponent):''));
- if(n<0n)lines.unshift('-1');
- return lines;
+ const terms=powers.map(({factor,exponent})=>factor+(exponent>1?superscript(exponent):''));
+ if(n<0n)terms.unshift('-1');
+ return terms;
 }

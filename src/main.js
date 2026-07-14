@@ -28,8 +28,8 @@ function requestFactors(value){
 function resetFactorQueue(){factorQueue.length=0;factorQueued.clear();}
 
 factorWorker.onmessage=e=>{
- const {value,lines}=e.data;
- factorCache.set(value,lines);factorActive=null;
+ const {value,terms}=e.data;
+ factorCache.set(value,terms);factorActive=null;
  draw();pumpFactorQueue();
 };
 
@@ -84,23 +84,76 @@ function rebuild(){fitOuter();update();draw();}
 function resize(){canvas.width=innerWidth-150;canvas.height=innerHeight;rebuild();}
 addEventListener('resize',resize);
 
-function labelLines(value){
+function labelTerms(value){
  if(!factorLabels)return [value.toString()];
  const key=value.toString(),cached=factorCache.get(key);
  if(cached)return cached;
  requestFactors(value);return [key];
 }
 
-function drawFittedLabel(lines,x,y,r){
- let fontSize=Math.min(40,r*.48);
+function rowWidth(terms,fontSize){
  ctx.font=fontSize+'px sans-serif';
- const widest=Math.max(...lines.map(line=>ctx.measureText(line).width));
- const lineHeightRatio=1.05,maxSize=r*1.6;
- fontSize*=Math.min(1,maxSize/Math.max(widest,1),maxSize/(fontSize*lineHeightRatio*lines.length));
- if(fontSize<1)return;
- ctx.font=fontSize+'px sans-serif';
- const lineHeight=fontSize*lineHeightRatio,startY=y-(lines.length-1)*lineHeight/2;
- lines.forEach((line,i)=>ctx.fillText(line,x,startY+i*lineHeight));
+ let width=terms.reduce((sum,term)=>sum+ctx.measureText(term).width,0);
+ if(terms.length>1){
+  const gap=fontSize*.09,dotSize=fontSize*.5;
+  ctx.font=dotSize+'px sans-serif';
+  width+=(terms.length-1)*(ctx.measureText('·').width+2*gap);
+ }
+ return width;
+}
+
+function layoutAtSize(terms,fontSize,r){
+ const innerRadius=r*.8,lineHeight=fontSize*1.08,n=terms.length;
+ const widths=Array.from({length:n},()=>Array(n+1).fill(0));
+ for(let start=0;start<n;start++)for(let end=start+1;end<=n;end++)widths[start][end]=rowWidth(terms.slice(start,end),fontSize);
+
+ for(let lineCount=1;lineCount<=n;lineCount++){
+  const available=[];let fitsHeight=true;
+  for(let row=0;row<lineCount;row++){
+   const offset=(row-(lineCount-1)/2)*lineHeight;
+   const edge=Math.abs(offset)+fontSize/2;
+   if(edge>=innerRadius){fitsHeight=false;break;}
+   available.push(2*Math.sqrt(innerRadius*innerRadius-edge*edge));
+  }
+  if(!fitsHeight)continue;
+  function place(start,row){
+   if(row===lineCount)return start===n?[]:null;
+   const remaining=lineCount-row-1,maxEnd=n-remaining;
+   for(let end=maxEnd;end>start;end--){
+    if(widths[start][end]>available[row])continue;
+    const rest=place(end,row+1);
+    if(rest)return [{terms:terms.slice(start,end),width:widths[start][end]},...rest];
+   }
+   return null;
+  }
+  const rows=place(0,0);
+  if(rows)return {fontSize,lineHeight,rows};
+ }
+ return null;
+}
+
+function drawFittedLabel(terms,x,y,r){
+ let low=.5,high=Math.min(40,r*.48),layout=null;
+ for(let i=0;i<12;i++){
+  const size=(low+high)/2,candidate=layoutAtSize(terms,size,r);
+  if(candidate){layout=candidate;low=size;}else high=size;
+ }
+ if(!layout)return;
+ layout.rows.forEach((row,rowIndex)=>{
+  const rowY=y+(rowIndex-(layout.rows.length-1)/2)*layout.lineHeight;
+  let cursor=x-row.width/2;
+  row.terms.forEach((term,termIndex)=>{
+   if(termIndex){
+    const gap=layout.fontSize*.09,dotSize=layout.fontSize*.5;
+    cursor+=gap;ctx.font=dotSize+'px sans-serif';
+    const dotWidth=ctx.measureText('·').width;
+    ctx.fillText('·',cursor+dotWidth/2,rowY+layout.fontSize*.04);cursor+=dotWidth+gap;
+   }
+   ctx.font=layout.fontSize+'px sans-serif';
+   const termWidth=ctx.measureText(term).width;
+   ctx.fillText(term,cursor+termWidth/2,rowY);cursor+=termWidth;
+  });
+ });
 }
 
 function drawCircleBoundary(x,y,r){
@@ -120,7 +173,7 @@ function draw(){
   if(![x,y,r].every(Number.isFinite))continue;
   const boundaryVisible=drawCircleBoundary(x,y,r);
   if(c.b<0n&&boundaryVisible){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}
-  else if(c.b>0n&&r>10&&x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height)drawFittedLabel(labelLines(c.b),x,y,r);
+  else if(c.b>0n&&r>10&&x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height)drawFittedLabel(labelTerms(c.b),x,y,r);
  }
 }
 
