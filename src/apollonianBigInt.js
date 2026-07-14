@@ -57,16 +57,50 @@ function tangencyPoint(a,b){
  return {x:(rb*ca.x+ra*cb.x)/d,y:(rb*ca.y+ra*cb.y)/d};
 }
 
-// The curved triangular valley lies inside the triangle formed by its three
-// pairwise tangency points. Its descendants stay inside those same bounds, so
-// an off-screen valley can be discarded without hiding another branch.
-function intersectsValley(node,v,margin=0){
- const boundary=node.config.filter((_,i)=>i!==node.replaced);
- const points=[
+const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
+function positiveAngle(angle){angle%=TAU;return angle<0?angle+TAU:angle;}
+function ccwDistance(from,to){return positiveAngle(to-from);}
+function angleOnCcwArc(angle,start,end){return ccwDistance(start,angle)<=ccwDistance(start,end)+ANGLE_EPSILON;}
+
+function addArcBounds(points,circle,startPoint,endPoint,viaPoint){
+ const c=toFloat(circle),r=c.r;
+ const angle=p=>positiveAngle(Math.atan2(p.y-c.y,p.x-c.x));
+ let start=angle(startPoint),end=angle(endPoint),via=angle(viaPoint);
+ // The candidate circle identifies which of the two boundary arcs faces this
+ // valley. Walk counter-clockwise over the arc containing its tangency point.
+ if(!angleOnCcwArc(via,start,end)){const swap=start;start=end;end=swap;}
+ points.push(startPoint,endPoint,viaPoint);
+ for(const cardinal of [0,Math.PI/2,Math.PI,3*Math.PI/2]){
+  if(angleOnCcwArc(cardinal,start,end))points.push({x:c.x+r*Math.cos(cardinal),y:c.y+r*Math.sin(cardinal)});
+ }
+}
+
+function valleyPoints(node,boundary){
+ const tangencies=[
   tangencyPoint(boundary[0],boundary[1]),
   tangencyPoint(boundary[0],boundary[2]),
   tangencyPoint(boundary[1],boundary[2])
  ];
+ if(!boundary.some(c=>c.b<0n))return tangencies;
+
+ // With an enclosing circle the valley can extend well beyond the straight
+ // tangency triangle (which can even collapse to a line). Bound the three
+ // curved sides by including each relevant arc's cardinal extrema.
+ const candidate=node.config[node.replaced],points=[];
+ for(let i=0;i<3;i++){
+  const others=[0,1,2].filter(j=>j!==i);
+  addArcBounds(points,boundary[i],tangencyPoint(boundary[i],boundary[others[0]]),
+   tangencyPoint(boundary[i],boundary[others[1]]),tangencyPoint(boundary[i],candidate));
+ }
+ return points;
+}
+
+// For three ordinary circles the curved valley lies inside their tangency
+// triangle. A valley touching an enclosing circle instead uses the bounds of
+// its three inward-facing arcs. Descendants stay inside these bounds.
+function intersectsValley(node,v,margin=0){
+ const boundary=node.config.filter((_,i)=>i!==node.replaced);
+ const points=valleyPoints(node,boundary);
  if(points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)))return true;
  const xs=points.map(p=>p.x),ys=points.map(p=>p.y);
  const left=Math.min(...xs),right=Math.max(...xs),bottom=Math.min(...ys),top=Math.max(...ys);
