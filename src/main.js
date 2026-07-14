@@ -1,17 +1,23 @@
 import {toFloat,createTree,generate,visibleTree} from './apollonianBigInt.js';
 import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {presets} from './presets.js';
+import {configurationFromCurvatures,parseCurvatures} from './customConfig.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
 const factorToggle=document.getElementById('factor-toggle');
 const homeButton=document.getElementById('home-button');
+const customButton=document.getElementById('custom-button');
+const customForm=document.getElementById('custom-form');
+const customInput=document.getElementById('custom-curvatures');
+const customCancel=document.getElementById('custom-cancel');
+const customError=document.getElementById('custom-error');
 const MIN_CIRCLE_RADIUS_PX=2;
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
-let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[];
-let root=createTree(presets[current]);
+let current=Object.keys(presets)[0],currentConfig=presets[current],zoom=600,offsetX=0,offsetY=0,circles=[];
+let root=createTree(currentConfig);
 const pointers=new Map();let gesture=null;
 let homeFrame=null;
 
@@ -73,19 +79,20 @@ function drawThumbnail(canvasEl,config){
 
 function renderCards(){
  panel.innerHTML='';
+ customButton.classList.toggle('selected',current==='custom');
  for(const name of Object.keys(presets)){
   const d=document.createElement('div');d.className='card'+(name===current?' selected':'');
   const t=document.createElement('canvas');t.width=130;t.height=100;t.className='thumb';
   const label=document.createElement('div');label.className='label';label.textContent=name;
   d.appendChild(t);d.appendChild(label);
-  d.onclick=()=>{current=name;root=createTree(presets[current]);rebuild();renderCards();};
+  d.onclick=()=>{current=name;currentConfig=presets[name];root=createTree(currentConfig);rebuild();renderCards();};
   panel.appendChild(d);drawThumbnail(t,presets[name]);
  }
 }
 
 function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/zoom,top:offsetY/zoom,bottom:(offsetY-canvas.height)/zoom};}
 function update(){resetFactorQueue();circles=visibleTree(root,viewport(),zoom,MIN_CIRCLE_RADIUS_PX);}
-function fitOuter(){const c=fitOuterFor(presets[current],canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
+function fitOuter(){const c=fitOuterFor(currentConfig,canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
 function cancelHomeAnimation(){if(homeFrame!==null){cancelAnimationFrame(homeFrame);homeFrame=null;}}
 function rebuild(){cancelHomeAnimation();fitOuter();update();draw();}
 function resize(){const rect=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(rect.width));canvas.height=Math.max(1,Math.round(rect.height));rebuild();}
@@ -194,7 +201,7 @@ function zoomAt(oldX,oldY,newX,newY,factor){
 
 function animateHome(){
  cancelHomeAnimation();
- const target=fitOuterFor(presets[current],canvas.width,canvas.height);
+ const target=fitOuterFor(currentConfig,canvas.width,canvas.height);
  const start={zoom,centerX:(canvas.width/2-offsetX)/zoom,centerY:(offsetY-canvas.height/2)/zoom};
  const end={zoom:target.zoom,centerX:(canvas.width/2-target.offsetX)/target.zoom,centerY:(target.offsetY-canvas.height/2)/target.zoom};
  if(matchMedia('(prefers-reduced-motion: reduce)').matches){
@@ -233,6 +240,21 @@ function animateHome(){
 }
 
 homeButton.addEventListener('click',animateHome);
+
+function setCustomForm(open){
+ customButton.setAttribute('aria-expanded',String(open));customForm.hidden=!open;
+ if(open){customError.textContent='';customInput.focus();}
+}
+customButton.addEventListener('click',()=>setCustomForm(customForm.hidden));
+customCancel.addEventListener('click',()=>setCustomForm(false));
+customForm.addEventListener('submit',e=>{
+ e.preventDefault();
+ try{
+  const bends=parseCurvatures(customInput.value);
+  currentConfig=configurationFromCurvatures(bends);current='custom';
+  root=createTree(currentConfig);setCustomForm(false);rebuild();renderCards();
+ }catch(error){customError.textContent=error.message;}
+});
 
 canvas.addEventListener('wheel',e=>{
  e.preventDefault();cancelHomeAnimation();const rect=canvas.getBoundingClientRect();
