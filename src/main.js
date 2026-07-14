@@ -7,7 +7,8 @@ const panel=document.getElementById('presets');
 const factorToggle=document.getElementById('factor-toggle');
 const homeButton=document.getElementById('home-button');
 const MIN_CIRCLE_RADIUS_PX=2;
-const HOME_DURATION_MS=1400;
+const WHEEL_ZOOM_SENSITIVITY=.001;
+const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[];
 let root=createTree(presets[current]);
 const pointers=new Map();let gesture=null;
@@ -199,12 +200,17 @@ function animateHome(){
   zoom=target.zoom;offsetX=target.offsetX;offsetY=target.offsetY;update();draw();return;
  }
  const started=performance.now(),logStart=Math.log(start.zoom),logEnd=Math.log(end.zoom);
+ const zoomDistance=Math.abs(logEnd-logStart);
+ // Match a steady, ordinary mouse-wheel pace (about six 100-unit notches per
+ // second) using the same sensitivity as manual zooming.
+ const duration=Math.max(HOME_MIN_DURATION_MS,
+  zoomDistance/(WHEEL_ZOOM_SENSITIVITY*HOME_WHEEL_DELTA_PER_SECOND)*1000);
  function step(now){
-  const t=Math.min(1,(now-started)/HOME_DURATION_MS);
-  const eased=t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
-  zoom=Math.exp(logStart+(logEnd-logStart)*eased);
-  const centerX=start.centerX+(end.centerX-start.centerX)*eased;
-  const centerY=start.centerY+(end.centerY-start.centerY)*eased;
+  // Linear progress in log-zoom space keeps the apparent shrink rate steady.
+  const t=Math.min(1,(now-started)/duration);
+  zoom=Math.exp(logStart+(logEnd-logStart)*t);
+  const centerX=start.centerX+(end.centerX-start.centerX)*t;
+  const centerY=start.centerY+(end.centerY-start.centerY)*t;
   offsetX=canvas.width/2-centerX*zoom;offsetY=canvas.height/2+centerY*zoom;
   update();draw();
   if(t<1)homeFrame=requestAnimationFrame(step);
@@ -218,7 +224,7 @@ homeButton.addEventListener('click',animateHome);
 canvas.addEventListener('wheel',e=>{
  e.preventDefault();cancelHomeAnimation();const rect=canvas.getBoundingClientRect();
  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
- if(zoomAt(mx,my,mx,my,Math.exp(-e.deltaY*.001))){update();draw();}
+ if(zoomAt(mx,my,mx,my,Math.exp(-e.deltaY*WHEEL_ZOOM_SENSITIVITY))){update();draw();}
 },{passive:false});
 
 function currentGesture(){
