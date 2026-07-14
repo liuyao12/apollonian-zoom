@@ -3,9 +3,44 @@ import {presets} from './presets.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
+const factorToggle=document.getElementById('factor-toggle');
 const MIN_CIRCLE_RADIUS_PX=2;
 let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[],dragging=false,last=[0,0];
 let root=createTree(presets[current]);
+
+const factorWorker=new Worker(new URL('./factorWorker.js',import.meta.url),{type:'module'});
+const factorCache=new Map(),factorQueue=[],factorQueued=new Set();
+let factorLabels=false,factorActive=null;
+
+function pumpFactorQueue(){
+ if(factorActive!==null||factorQueue.length===0)return;
+ factorActive=factorQueue.shift();factorQueued.delete(factorActive);
+ factorWorker.postMessage({value:factorActive});
+}
+
+function requestFactors(value){
+ const key=value.toString();
+ if(factorCache.has(key)||factorActive===key||factorQueued.has(key))return;
+ factorQueue.push(key);factorQueued.add(key);pumpFactorQueue();
+}
+
+function resetFactorQueue(){factorQueue.length=0;factorQueued.clear();}
+
+factorWorker.onmessage=e=>{
+ const {value,lines}=e.data;
+ factorCache.set(value,lines);factorActive=null;
+ draw();pumpFactorQueue();
+};
+
+factorWorker.onerror=()=>{
+ factorActive=null;resetFactorQueue();factorLabels=false;
+ factorToggle.checked=false;factorToggle.disabled=true;
+ draw();
+};
+
+factorToggle.onchange=()=>{
+ factorLabels=factorToggle.checked;resetFactorQueue();draw();
+};
 
 function fitOuterFor(config,w,h){
  const outer=config.find(c=>c.b<0n)||config[0];
@@ -42,16 +77,35 @@ function renderCards(){
 }
 
 function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/zoom,top:offsetY/zoom,bottom:(offsetY-canvas.height)/zoom};}
-function update(){circles=visibleTree(root,viewport(),zoom,MIN_CIRCLE_RADIUS_PX);}
+function update(){resetFactorQueue();circles=visibleTree(root,viewport(),zoom,MIN_CIRCLE_RADIUS_PX);}
 function fitOuter(){const c=fitOuterFor(presets[current],canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
 function rebuild(){fitOuter();update();draw();}
 function resize(){canvas.width=innerWidth-150;canvas.height=innerHeight;rebuild();}
 addEventListener('resize',resize);
 
+function labelLines(value){
+ if(!factorLabels)return [value.toString()];
+ const key=value.toString(),cached=factorCache.get(key);
+ if(cached)return cached;
+ requestFactors(value);return [key];
+}
+
+function drawFittedLabel(lines,x,y,r){
+ let fontSize=Math.min(40,r*.48);
+ ctx.font=fontSize+'px sans-serif';
+ const widest=Math.max(...lines.map(line=>ctx.measureText(line).width));
+ const lineHeightRatio=1.05,maxSize=r*1.6;
+ fontSize*=Math.min(1,maxSize/Math.max(widest,1),maxSize/(fontSize*lineHeightRatio*lines.length));
+ if(fontSize<1)return;
+ ctx.font=fontSize+'px sans-serif';
+ const lineHeight=fontSize*lineHeightRatio,startY=y-(lines.length-1)*lineHeight/2;
+ lines.forEach((line,i)=>ctx.fillText(line,x,startY+i*lineHeight));
+}
+
 function draw(){
  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.strokeStyle='black';ctx.fillStyle='black';ctx.textAlign='center';ctx.textBaseline='middle';
- for(const e of circles){const c=toFloat(e),x=offsetX+c.x*zoom,y=offsetY-c.y*zoom,r=c.r*zoom;if(!Number.isFinite(x+y+r))continue;if(x+r<0||x-r>canvas.width||y+r<0||y-r>canvas.height)continue;ctx.beginPath();ctx.arc(x,y,r,0,2*Math.PI);ctx.stroke();if(c.b<0n){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}else if(r>10){ctx.font=Math.max(9,Math.min(r*.4,40))+'px sans-serif';ctx.fillText(c.b.toString(),x,y);}}
+ for(const e of circles){const c=toFloat(e),x=offsetX+c.x*zoom,y=offsetY-c.y*zoom,r=c.r*zoom;if(!Number.isFinite(x+y+r))continue;if(x+r<0||x-r>canvas.width||y+r<0||y-r>canvas.height)continue;ctx.beginPath();ctx.arc(x,y,r,0,2*Math.PI);ctx.stroke();if(c.b<0n){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}else if(r>10){drawFittedLabel(labelLines(c.b),x,y,r);}}
 }
 
 canvas.addEventListener('wheel',e=>{e.preventDefault();const rect=canvas.getBoundingClientRect();const mx=e.clientX-rect.left,my=e.clientY-rect.top;const f=Math.exp(-e.deltaY*.001);const wx=(mx-offsetX)/zoom,wy=-(my-offsetY)/zoom;zoom*=f;offsetX=mx-wx*zoom;offsetY=my+wy*zoom;update();draw();},{passive:false});

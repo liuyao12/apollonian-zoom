@@ -11,11 +11,16 @@ canvas{display:block;background:white}
 .card:hover,.card.selected{background:#eee}
 .thumb{display:block;margin:0 auto 4px auto;width:130px;height:100px}
 .label{text-align:center}
+.factor-control{display:flex;align-items:center;gap:4px;margin:7px 0;font-size:12px;cursor:pointer;user-select:none}
 #canvas{margin-left:150px;width:calc(100% - 150px);height:100%}
 </style>
 </head>
 <body>
-<div id="sidebar"><b>ACP</b><div id="presets"></div></div>
+<div id="sidebar">
+<b>ACP</b>
+<label class="factor-control"><input id="factor-toggle" type="checkbox"> Factor labels</label>
+<div id="presets"></div>
+</div>
 <canvas id="canvas"></canvas>
 <script type="module" src="src/main.js"></script>
 </body>
