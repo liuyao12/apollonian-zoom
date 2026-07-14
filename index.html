@@ -2,23 +2,39 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Apollonian Zoom</title>
 <style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:sans-serif}
+:root{--sidebar-width:clamp(142px,24vw,170px)}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none;font-family:sans-serif}
 canvas{display:block;background:white}
-#sidebar{position:fixed;left:0;top:0;width:150px;height:100%;background:#fff;border-right:1px solid #ccc;z-index:10;overflow:auto;padding:8px}
-.card{border:1px solid #ccc;margin-bottom:8px;padding:4px;cursor:pointer;text-align:center;font-size:12px}
+#sidebar{position:fixed;left:0;top:0;width:var(--sidebar-width);height:100%;background:#fff;border-right:1px solid #ccc;z-index:10;overflow:auto;padding:10px;-webkit-overflow-scrolling:touch}
+.app-title{font-size:15px;font-weight:700;line-height:1.15;margin-bottom:8px}
+.card{border:1px solid #ccc;margin-bottom:8px;padding:6px 4px;min-height:44px;cursor:pointer;text-align:center;font-size:12px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .card:hover,.card.selected{background:#eee}
-.thumb{display:block;margin:0 auto 4px auto;width:130px;height:100px}
+.thumb{display:block;margin:0 auto 4px auto;width:min(130px,100%);height:auto;aspect-ratio:13/10}
 .label{text-align:center}
-.factor-control{display:flex;align-items:center;gap:4px;margin:7px 0;font-size:12px;cursor:pointer;user-select:none}
-#canvas{margin-left:150px;width:calc(100% - 150px);height:100%}
+.factor-control{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;margin:2px 0 8px;font-size:12px;cursor:pointer;user-select:none;touch-action:manipulation}
+.switch{position:relative;flex:0 0 auto;width:42px;height:24px}
+.switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;z-index:1;cursor:pointer}
+.slider{position:absolute;inset:0;border-radius:999px;background:#aaa;transition:background .15s ease}
+.slider::before{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #555;transition:transform .15s ease}
+.switch input:checked+.slider{background:#222}
+.switch input:checked+.slider::before{transform:translateX(18px)}
+.switch input:focus-visible+.slider{outline:2px solid #2673d9;outline-offset:2px}
+.switch input:disabled+.slider{opacity:.45}
+#canvas{margin-left:var(--sidebar-width);width:calc(100% - var(--sidebar-width));height:100%;touch-action:none;cursor:grab}
+#canvas.interacting{cursor:grabbing}
 </style>
 </head>
 <body>
 <div id="sidebar">
-<b>ACP</b>
-<label class="factor-control"><input id="factor-toggle" type="checkbox"> Factor labels</label>
+<div class="app-title">Apollonian Circle Packings</div>
+<label class="factor-control">
+<span>Prime factorization</span>
+<span class="switch"><input id="factor-toggle" type="checkbox" role="switch"><span class="slider" aria-hidden="true"></span></span>
+</label>
 <div id="presets"></div>
 </div>
 <canvas id="canvas"></canvas>

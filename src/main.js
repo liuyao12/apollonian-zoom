@@ -6,8 +6,9 @@ const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
 const factorToggle=document.getElementById('factor-toggle');
 const MIN_CIRCLE_RADIUS_PX=2;
-let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[],dragging=false,last=[0,0];
+let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[];
 let root=createTree(presets[current]);
+const pointers=new Map();let gesture=null;
 
 const factorWorker=new Worker(new URL('./factorWorker.js',import.meta.url),{type:'module'});
 const factorCache=new Map(),factorQueue=[],factorQueued=new Set();
@@ -81,7 +82,7 @@ function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/z
 function update(){resetFactorQueue();circles=visibleTree(root,viewport(),zoom,MIN_CIRCLE_RADIUS_PX);}
 function fitOuter(){const c=fitOuterFor(presets[current],canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
 function rebuild(){fitOuter();update();draw();}
-function resize(){canvas.width=innerWidth-150;canvas.height=innerHeight;rebuild();}
+function resize(){const rect=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(rect.width));canvas.height=Math.max(1,Math.round(rect.height));rebuild();}
 addEventListener('resize',resize);
 
 function labelTerms(value){
@@ -177,9 +178,55 @@ function draw(){
  }
 }
 
-canvas.addEventListener('wheel',e=>{e.preventDefault();const rect=canvas.getBoundingClientRect();const mx=e.clientX-rect.left,my=e.clientY-rect.top;const f=Math.exp(-e.deltaY*.001);const wx=(mx-offsetX)/zoom,wy=-(my-offsetY)/zoom;zoom*=f;offsetX=mx-wx*zoom;offsetY=my+wy*zoom;update();draw();},{passive:false});
-canvas.onmousedown=e=>{dragging=true;last=[e.clientX,e.clientY]};
-canvas.onmouseup=()=>dragging=false;
-canvas.onmousemove=e=>{if(!dragging)return;offsetX+=e.clientX-last[0];offsetY+=e.clientY-last[1];last=[e.clientX,e.clientY];update();draw();};
+function zoomAt(oldX,oldY,newX,newY,factor){
+ const nextZoom=zoom*factor;
+ if(!Number.isFinite(nextZoom)||nextZoom<=0)return false;
+ const wx=(oldX-offsetX)/zoom,wy=-(oldY-offsetY)/zoom;
+ zoom=nextZoom;offsetX=newX-wx*zoom;offsetY=newY+wy*zoom;
+ return true;
+}
+
+canvas.addEventListener('wheel',e=>{
+ e.preventDefault();const rect=canvas.getBoundingClientRect();
+ const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+ if(zoomAt(mx,my,mx,my,Math.exp(-e.deltaY*.001))){update();draw();}
+},{passive:false});
+
+function currentGesture(){
+ const points=[...pointers.values()];
+ if(points.length===0)return null;
+ if(points.length===1)return {type:'pan',x:points[0].x,y:points[0].y};
+ const a=points[0],b=points[1];
+ return {type:'pinch',x:(a.x+b.x)/2,y:(a.y+b.y)/2,distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y))};
+}
+
+canvas.addEventListener('pointerdown',e=>{
+ if(e.pointerType==='mouse'&&e.button!==0)return;
+ e.preventDefault();canvas.setPointerCapture(e.pointerId);
+ pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});gesture=currentGesture();
+ canvas.classList.add('interacting');
+});
+
+canvas.addEventListener('pointermove',e=>{
+ if(!pointers.has(e.pointerId))return;
+ e.preventDefault();pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+ const next=currentGesture();let changed=false;
+ if(gesture?.type==='pan'&&next?.type==='pan'){
+  offsetX+=next.x-gesture.x;offsetY+=next.y-gesture.y;changed=true;
+ }else if(gesture?.type==='pinch'&&next?.type==='pinch'){
+  const rect=canvas.getBoundingClientRect();
+  changed=zoomAt(gesture.x-rect.left,gesture.y-rect.top,next.x-rect.left,next.y-rect.top,next.distance/gesture.distance);
+ }
+ gesture=next;if(changed){update();draw();}
+});
+
+function endPointer(e){
+ if(!pointers.delete(e.pointerId))return;
+ if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);
+ gesture=currentGesture();if(pointers.size===0)canvas.classList.remove('interacting');
+}
+canvas.addEventListener('pointerup',endPointer);
+canvas.addEventListener('pointercancel',endPointer);
+canvas.addEventListener('lostpointercapture',endPointer);
 
 resize();renderCards();
