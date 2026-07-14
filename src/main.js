@@ -1,4 +1,4 @@
-import {toFloat,createTree,generateVisible} from './apollonianBigInt.js';
+import {toFloat,createTree,generate,visibleTree} from './apollonianBigInt.js';
 import {presets} from './presets.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
@@ -17,7 +17,10 @@ function drawThumbnail(canvasEl,config){
  const cctx=canvasEl.getContext('2d');
  cctx.fillStyle='white';cctx.fillRect(0,0,canvasEl.width,canvasEl.height);
  const cam=fitOuterFor(config,canvasEl.width,canvasEl.height);
- const cs=generateVisible(createTree(config),{left:-10,right:10,top:10,bottom:-10},1);
+ // Thumbnails only need a representative finite packing. Running the
+ // viewport-driven infinite traversal six times here makes startup needlessly
+ // expensive, especially for presets with large curvatures.
+ const cs=generate(config,5);
  cctx.strokeStyle='black';
  for(const e of cs){
   const c=toFloat(e),x=cam.offsetX+c.x*cam.zoom,y=cam.offsetY-c.y*cam.zoom,r=c.r*cam.zoom;
@@ -38,7 +41,7 @@ function renderCards(){
 }
 
 function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/zoom,top:offsetY/zoom,bottom:(offsetY-canvas.height)/zoom};}
-function update(){circles=generateVisible(root,viewport(),zoom);}
+function update(){circles=visibleTree(root,viewport(),zoom);}
 function fitOuter(){const c=fitOuterFor(presets[current],canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
 function rebuild(){fitOuter();update();draw();}
 function resize(){canvas.width=innerWidth-150;canvas.height=innerHeight;rebuild();}
@@ -55,4 +58,4 @@ canvas.onmousedown=e=>{dragging=true;last=[e.clientX,e.clientY]};
 canvas.onmouseup=()=>dragging=false;
 canvas.onmousemove=e=>{if(!dragging)return;offsetX+=e.clientX-last[0];offsetY+=e.clientY-last[1];last=[e.clientX,e.clientY];update();draw();};
 
-resize();renderCards();rebuild();
+resize();renderCards();
