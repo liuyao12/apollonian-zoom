@@ -1,4 +1,5 @@
 import {toFloat,createTree,generate,visibleTree} from './apollonianBigInt.js';
+import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {presets} from './presets.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
@@ -102,10 +103,25 @@ function drawFittedLabel(lines,x,y,r){
  lines.forEach((line,i)=>ctx.fillText(line,x,startY+i*lineHeight));
 }
 
+function drawCircleBoundary(x,y,r){
+ const boundary=circleBoundaryPrimitive(x,y,r,canvas.width,canvas.height);
+ if(boundary.type==='none')return false;
+ ctx.beginPath();
+ if(boundary.type==='arc')ctx.arc(boundary.x,boundary.y,boundary.r,0,2*Math.PI);
+ else{ctx.moveTo(boundary.x1,boundary.y1);ctx.lineTo(boundary.x2,boundary.y2);}
+ ctx.stroke();return true;
+}
+
 function draw(){
  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.strokeStyle='black';ctx.fillStyle='black';ctx.textAlign='center';ctx.textBaseline='middle';
- for(const e of circles){const c=toFloat(e),x=offsetX+c.x*zoom,y=offsetY-c.y*zoom,r=c.r*zoom;if(!Number.isFinite(x+y+r))continue;if(x+r<0||x-r>canvas.width||y+r<0||y-r>canvas.height)continue;ctx.beginPath();ctx.arc(x,y,r,0,2*Math.PI);ctx.stroke();if(c.b<0n){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}else if(r>10){drawFittedLabel(labelLines(c.b),x,y,r);}}
+ for(const e of circles){
+  const c=toFloat(e),x=offsetX+c.x*zoom,y=offsetY-c.y*zoom,r=c.r*zoom;
+  if(![x,y,r].every(Number.isFinite))continue;
+  const boundaryVisible=drawCircleBoundary(x,y,r);
+  if(c.b<0n&&boundaryVisible){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}
+  else if(c.b>0n&&r>10&&x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height)drawFittedLabel(labelLines(c.b),x,y,r);
+ }
 }
 
 canvas.addEventListener('wheel',e=>{e.preventDefault();const rect=canvas.getBoundingClientRect();const mx=e.clientX-rect.left,my=e.clientY-rect.top;const f=Math.exp(-e.deltaY*.001);const wx=(mx-offsetX)/zoom,wy=-(my-offsetY)/zoom;zoom*=f;offsetX=mx-wx*zoom;offsetY=my+wy*zoom;update();draw();},{passive:false});
