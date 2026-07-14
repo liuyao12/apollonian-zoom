@@ -26,6 +26,10 @@ canvas{display:block;background:white}
 .switch input:disabled+.slider{opacity:.45}
 #canvas{margin-left:var(--sidebar-width);width:calc(100% - var(--sidebar-width));height:100%;touch-action:none;cursor:grab}
 #canvas.interacting{cursor:grabbing}
+#home-button{position:fixed;z-index:9;top:max(12px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));min-width:76px;min-height:44px;padding:0 15px;border:1px solid #aaa;border-radius:999px;background:rgba(255,255,255,.94);color:#111;box-shadow:0 2px 7px #0002;font:600 14px sans-serif;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+#home-button:hover{background:#f2f2f2}
+#home-button:active{transform:translateY(1px)}
+#home-button:focus-visible{outline:2px solid #2673d9;outline-offset:2px}
 </style>
 </head>
 <body>
@@ -38,6 +42,7 @@ canvas{display:block;background:white}
 <div id="presets"></div>
 </div>
 <canvas id="canvas"></canvas>
+<button id="home-button" type="button" aria-label="Return to home view">Home</button>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

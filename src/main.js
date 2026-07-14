@@ -5,10 +5,13 @@ import {presets} from './presets.js';
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
 const factorToggle=document.getElementById('factor-toggle');
+const homeButton=document.getElementById('home-button');
 const MIN_CIRCLE_RADIUS_PX=2;
+const HOME_DURATION_MS=1400;
 let current=Object.keys(presets)[0],zoom=600,offsetX=0,offsetY=0,circles=[];
 let root=createTree(presets[current]);
 const pointers=new Map();let gesture=null;
+let homeFrame=null;
 
 const factorWorker=new Worker(new URL('./factorWorker.js',import.meta.url),{type:'module'});
 const factorCache=new Map(),factorQueue=[],factorQueued=new Set();
@@ -81,7 +84,8 @@ function renderCards(){
 function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/zoom,top:offsetY/zoom,bottom:(offsetY-canvas.height)/zoom};}
 function update(){resetFactorQueue();circles=visibleTree(root,viewport(),zoom,MIN_CIRCLE_RADIUS_PX);}
 function fitOuter(){const c=fitOuterFor(presets[current],canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
-function rebuild(){fitOuter();update();draw();}
+function cancelHomeAnimation(){if(homeFrame!==null){cancelAnimationFrame(homeFrame);homeFrame=null;}}
+function rebuild(){cancelHomeAnimation();fitOuter();update();draw();}
 function resize(){const rect=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(rect.width));canvas.height=Math.max(1,Math.round(rect.height));rebuild();}
 addEventListener('resize',resize);
 
@@ -186,8 +190,33 @@ function zoomAt(oldX,oldY,newX,newY,factor){
  return true;
 }
 
+function animateHome(){
+ cancelHomeAnimation();
+ const target=fitOuterFor(presets[current],canvas.width,canvas.height);
+ const start={zoom,centerX:(canvas.width/2-offsetX)/zoom,centerY:(offsetY-canvas.height/2)/zoom};
+ const end={zoom:target.zoom,centerX:(canvas.width/2-target.offsetX)/target.zoom,centerY:(target.offsetY-canvas.height/2)/target.zoom};
+ if(matchMedia('(prefers-reduced-motion: reduce)').matches){
+  zoom=target.zoom;offsetX=target.offsetX;offsetY=target.offsetY;update();draw();return;
+ }
+ const started=performance.now(),logStart=Math.log(start.zoom),logEnd=Math.log(end.zoom);
+ function step(now){
+  const t=Math.min(1,(now-started)/HOME_DURATION_MS);
+  const eased=t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+  zoom=Math.exp(logStart+(logEnd-logStart)*eased);
+  const centerX=start.centerX+(end.centerX-start.centerX)*eased;
+  const centerY=start.centerY+(end.centerY-start.centerY)*eased;
+  offsetX=canvas.width/2-centerX*zoom;offsetY=canvas.height/2+centerY*zoom;
+  update();draw();
+  if(t<1)homeFrame=requestAnimationFrame(step);
+  else{zoom=target.zoom;offsetX=target.offsetX;offsetY=target.offsetY;homeFrame=null;update();draw();}
+ }
+ homeFrame=requestAnimationFrame(step);
+}
+
+homeButton.addEventListener('click',animateHome);
+
 canvas.addEventListener('wheel',e=>{
- e.preventDefault();const rect=canvas.getBoundingClientRect();
+ e.preventDefault();cancelHomeAnimation();const rect=canvas.getBoundingClientRect();
  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
  if(zoomAt(mx,my,mx,my,Math.exp(-e.deltaY*.001))){update();draw();}
 },{passive:false});
@@ -202,7 +231,7 @@ function currentGesture(){
 
 canvas.addEventListener('pointerdown',e=>{
  if(e.pointerType==='mouse'&&e.button!==0)return;
- e.preventDefault();canvas.setPointerCapture(e.pointerId);
+ e.preventDefault();cancelHomeAnimation();canvas.setPointerCapture(e.pointerId);
  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});gesture=currentGesture();
  canvas.classList.add('interacting');
 });
