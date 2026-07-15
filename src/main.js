@@ -95,14 +95,20 @@ function renderCards(){
 
 function update(){
  resetFactorQueue();circles=visibleTreeProjected(currentConfig,camera,canvas.width,canvas.height,MIN_CIRCLE_RADIUS_PX);
- if(homeFrame===null&&(Math.abs(camera.screenX)>1e5||Math.abs(camera.screenY)>1e5||!Number.isFinite(camera.screenX+camera.screenY))){
+ const centerX=canvas.width/2,centerY=canvas.height/2;
+ const viewportDiagonal=Math.hypot(canvas.width,canvas.height);
+ const anchorDistance=Math.hypot(camera.screenX-centerX,camera.screenY-centerY);
+ // Move the exact floating origin in viewport-sized stages. The separate
+ // enter and improvement thresholds provide hysteresis, so normal panning
+ // near a boundary cannot make the anchor oscillate between two circles.
+ if(homeFrame===null&&(!Number.isFinite(anchorDistance)||anchorDistance>2*viewportDiagonal)){
   let best=null,bestDistance=Infinity;
   for(const circle of circles){
    if(circle.b<=0n)continue;
-   const p=projectCircle(circle,camera),distance=Math.hypot(p.x-canvas.width/2,p.y-canvas.height/2);
+   const p=projectCircle(circle,camera),distance=Math.hypot(p.x-centerX,p.y-centerY);
    if(Number.isFinite(distance)&&distance<bestDistance){best={circle,p};bestDistance=distance;}
   }
-  if(best)reanchorCamera(camera,best.circle,best.p);
+  if(best&&bestDistance<Math.max(viewportDiagonal,anchorDistance/2))reanchorCamera(camera,best.circle,best.p);
  }
 }
 function fitOuter(){
