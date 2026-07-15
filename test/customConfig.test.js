@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {configurationFromCurvatures,parseCurvatures} from '../src/customConfig.js';
+import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from '../src/customConfig.js';
 import {presets} from '../src/presets.js';
 
 function squaredDistance(a,b){
@@ -13,7 +13,13 @@ function squaredDistance(a,b){
 
 test('parses common custom curvature formats',()=>{
  assert.deepEqual(parseCurvatures('(-1, 2, 2, 3)'),[-1n,2n,2n,3n]);
- assert.deepEqual(parseCurvatures('-2 3 6 7'),[-2n,3n,6n,7n]);
+ assert.deepEqual(parseCurvatures('-2 3 6'),[-2n,3n,6n]);
+});
+
+test('deduces a missing outer or inner curvature',()=>{
+ assert.deepEqual(completeCurvatures([2n,2n,3n]),[-1n,2n,2n,3n]);
+ assert.deepEqual(completeCurvatures([-1n,2n,2n]),[-1n,2n,2n,3n]);
+ assert.deepEqual(completeCurvatures([-1n,2n,6n]),[-1n,2n,3n,6n]);
 });
 
 for(const name of Object.keys(presets))test(`reconstructs tangent centers for ${name}`,()=>{
@@ -30,5 +36,5 @@ test('rejects a quadruple that fails Descartes equation',()=>{
 });
 
 test('constructs a valid non-preset configuration',()=>{
- assert.doesNotThrow(()=>configurationFromCurvatures([-1n,2n,3n,6n]));
+ assert.doesNotThrow(()=>configurationFromCurvatures([-1n,2n,6n]));
 });

@@ -43,21 +43,49 @@ function representedCircle(b,x,y){return {b,bx:mul({n:b,d:1n},x),by:mul({n:b,d:1
 export function parseCurvatures(text){
  const cleaned=text.trim().replace(/[()]/g,' ');
  const parts=cleaned.split(/[\s,]+/).filter(Boolean);
- if(parts.length!==4||parts.some(part=>!/^[-+]?\d+$/.test(part)))
-  throw new Error('Enter exactly four integers, such as (-1, 2, 2, 3).');
+ if((parts.length!==3&&parts.length!==4)||parts.some(part=>!/^[-+]?\d+$/.test(part)))
+  throw new Error('Enter three or four integers, such as (-1, 2, 2).');
  return parts.map(part=>BigInt(part));
 }
 
-export function configurationFromCurvatures(input){
+function normalizedBends(bends){
+ const negatives=bends.filter(b=>b<0n),positives=bends.filter(b=>b>0n).sort((a,b)=>a<b?-1:a>b?1:0);
+ if(negatives.length!==1||positives.length!==3)
+  throw new Error('Use one negative enclosing curvature and three positive curvatures.');
+ return [negatives[0],...positives];
+}
+
+export function completeCurvatures(input){
  const bends=input.map(BigInt);
+ if(bends.length===4)return normalizedBends(bends);
+ if(bends.length!==3)throw new Error('Enter three or four integer curvatures.');
+ const [a,b,c]=bends,q=a*b+a*c+b*c;
+ const root=integerSqrt(q);
+ if(root===null)throw new Error('These three integers do not have an integer Descartes completion.');
+ const sum=a+b+c;
+ const candidates=[sum-2n*root,sum+2n*root]
+  .filter((value,index,all)=>value!==0n&&all.indexOf(value)===index)
+  .map(value=>[...bends,value])
+  .filter(values=>values.filter(value=>value<0n).length===1&&values.filter(value=>value>0n).length===3);
+ if(candidates.length===0)throw new Error('These curvatures do not complete to a bounded packing.');
+ // Three tangent circles can have two Soddy-circle completions. They generate
+ // the same packing; the smaller bend is the reduced initial configuration.
+ candidates.sort((left,right)=>{
+  const leftAdded=abs(left[3]),rightAdded=abs(right[3]);
+  return leftAdded<rightAdded?-1:leftAdded>rightAdded?1:0;
+ });
+ return normalizedBends(candidates[0]);
+}
+
+export function configurationFromCurvatures(input){
+ const bends=completeCurvatures(input);
  if(bends.filter(b=>b<0n).length!==1||bends.filter(b=>b>0n).length!==3)
   throw new Error('Use one negative enclosing curvature and three positive curvatures.');
  const sum=bends.reduce((a,b)=>a+b,0n);
  const squareSum=bends.reduce((a,b)=>a+b*b,0n);
  if(sum*sum!==2n*squareSum)throw new Error('These integers do not satisfy Descartes’ circle equation.');
 
- const ordered=[bends.find(b=>b<0n),...bends.filter(b=>b>0n)];
- const [outer,a,b,c]=ordered;
+ const [outer,a,b,c]=bends;
  const R=fraction(1n,-outer),ra=fraction(1n,a),rb=fraction(1n,b),rc=fraction(1n,c);
  const dA=sub(R,ra),dB=sub(R,rb),dC=sub(R,rc);
  if(dA.n<=0n||dB.n<=0n||dC.n<=0n)throw new Error('The negative curvature must describe a circle enclosing the other three.');

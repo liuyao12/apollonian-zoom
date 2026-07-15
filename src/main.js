@@ -1,7 +1,7 @@
 import {toFloat,createTree,generate,visibleTree} from './apollonianBigInt.js';
 import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {presets} from './presets.js';
-import {configurationFromCurvatures,parseCurvatures} from './customConfig.js';
+import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
@@ -18,6 +18,7 @@ const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
 let current=Object.keys(presets)[0],currentConfig=presets[current],zoom=600,offsetX=0,offsetY=0,circles=[];
 let root=createTree(currentConfig);
+const customConfigs=[];
 const pointers=new Map();let gesture=null;
 let homeFrame=null;
 
@@ -79,15 +80,17 @@ function drawThumbnail(canvasEl,config){
 
 function renderCards(){
  panel.innerHTML='';
- customButton.classList.toggle('selected',current==='custom');
- for(const name of Object.keys(presets)){
-  const d=document.createElement('div');d.className='card'+(name===current?' selected':'');
+ function appendCard(name,config,id){
+  const d=document.createElement('div');
   const t=document.createElement('canvas');t.width=130;t.height=100;t.className='thumb';
   const label=document.createElement('div');label.className='label';label.textContent=name;
   d.appendChild(t);d.appendChild(label);
-  d.onclick=()=>{current=name;currentConfig=presets[name];root=createTree(currentConfig);rebuild();renderCards();};
-  panel.appendChild(d);drawThumbnail(t,presets[name]);
+  d.className='card'+(id===current?' selected':'');
+  d.onclick=()=>{current=id;currentConfig=config;root=createTree(currentConfig);rebuild();renderCards();};
+  panel.appendChild(d);drawThumbnail(t,config);
  }
+ for(const name of Object.keys(presets))appendCard(name,presets[name],name);
+ for(const entry of customConfigs)appendCard(entry.name,entry.config,entry.id);
 }
 
 function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/zoom,top:offsetY/zoom,bottom:(offsetY-canvas.height)/zoom};}
@@ -250,8 +253,11 @@ customCancel.addEventListener('click',()=>setCustomForm(false));
 customForm.addEventListener('submit',e=>{
  e.preventDefault();
  try{
-  const bends=parseCurvatures(customInput.value);
-  currentConfig=configurationFromCurvatures(bends);current='custom';
+  const bends=completeCurvatures(parseCurvatures(customInput.value));
+  const name=`(${bends.join(',')})`,id=`custom:${name}`;
+  let entry=customConfigs.find(candidate=>candidate.id===id);
+  if(!entry){entry={id,name,config:configurationFromCurvatures(bends)};customConfigs.push(entry);}
+  currentConfig=entry.config;current=entry.id;
   root=createTree(currentConfig);setCustomForm(false);rebuild();renderCards();
  }catch(error){customError.textContent=error.message;}
 });
