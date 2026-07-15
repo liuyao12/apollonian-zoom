@@ -13,7 +13,7 @@ const customForm=document.getElementById('custom-form');
 const customInput=document.getElementById('custom-curvatures');
 const customCancel=document.getElementById('custom-cancel');
 const customError=document.getElementById('custom-error');
-const MIN_CIRCLE_RADIUS_PX=5;
+const MIN_CIRCLE_RADIUS_PX=2;
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
