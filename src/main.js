@@ -1,7 +1,8 @@
-import {toFloat,createTree,generate,visibleTree} from './apollonianBigInt.js';
+import {toFloat,generate} from './apollonianBigInt.js';
 import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
+import {cameraForCircle,giantCircleLine,multiplyScale,projectCircle,reanchorCamera,scaleFromNumber,scaleLog,visibleTreeProjected} from './exactViewport.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
@@ -16,8 +17,7 @@ const MIN_CIRCLE_RADIUS_PX=2;
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
-let current=Object.keys(presets)[0],currentConfig=presets[current],zoom=600,offsetX=0,offsetY=0,circles=[];
-let root=createTree(currentConfig);
+let current=Object.keys(presets)[0],currentConfig=presets[current],circles=[],camera=null;
 const customConfigs=[];
 const pointers=new Map();let gesture=null;
 let homeFrame=null;
@@ -86,16 +86,30 @@ function renderCards(){
   const label=document.createElement('div');label.className='label';label.textContent=name;
   d.appendChild(t);d.appendChild(label);
   d.className='card'+(id===current?' selected':'');
-  d.onclick=()=>{current=id;currentConfig=config;root=createTree(currentConfig);rebuild();renderCards();};
+  d.onclick=()=>{current=id;currentConfig=config;rebuild();renderCards();};
   panel.appendChild(d);drawThumbnail(t,config);
  }
  for(const name of Object.keys(presets))appendCard(name,presets[name],name);
  for(const entry of customConfigs)appendCard(entry.name,entry.config,entry.id);
 }
 
-function viewport(){return {left:(0-offsetX)/zoom,right:(canvas.width-offsetX)/zoom,top:offsetY/zoom,bottom:(offsetY-canvas.height)/zoom};}
-function update(){resetFactorQueue();circles=visibleTree(root,viewport(),zoom,MIN_CIRCLE_RADIUS_PX);}
-function fitOuter(){const c=fitOuterFor(currentConfig,canvas.width,canvas.height);zoom=c.zoom;offsetX=c.offsetX;offsetY=c.offsetY;}
+function update(){
+ resetFactorQueue();circles=visibleTreeProjected(currentConfig,camera,canvas.width,canvas.height,MIN_CIRCLE_RADIUS_PX);
+ if(homeFrame===null&&(Math.abs(camera.screenX)>1e5||Math.abs(camera.screenY)>1e5||!Number.isFinite(camera.screenX+camera.screenY))){
+  let best=null,bestDistance=Infinity;
+  for(const circle of circles){
+   if(circle.b<=0n)continue;
+   const p=projectCircle(circle,camera),distance=Math.hypot(p.x-canvas.width/2,p.y-canvas.height/2);
+   if(Number.isFinite(distance)&&distance<bestDistance){best={circle,p};bestDistance=distance;}
+  }
+  if(best)reanchorCamera(camera,best.circle,best.p);
+ }
+}
+function fitOuter(){
+ const outer=currentConfig.find(c=>c.b<0n)||currentConfig[0];
+ const fit=fitOuterFor(currentConfig,canvas.width,canvas.height);
+ camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,scaleFromNumber(fit.zoom));
+}
 function cancelHomeAnimation(){if(homeFrame!==null){cancelAnimationFrame(homeFrame);homeFrame=null;}}
 function rebuild(){cancelHomeAnimation();fitOuter();update();draw();}
 function resize(){const rect=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(rect.width));canvas.height=Math.max(1,Math.round(rect.height));rebuild();}
@@ -186,58 +200,64 @@ function draw(){
  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.strokeStyle='black';ctx.fillStyle='black';ctx.textAlign='center';ctx.textBaseline='middle';
  for(const e of circles){
-  const c=toFloat(e),x=offsetX+c.x*zoom,y=offsetY-c.y*zoom,r=c.r*zoom;
-  if(![x,y,r].every(Number.isFinite))continue;
-  const boundaryVisible=drawCircleBoundary(x,y,r);
-  if(c.b<0n&&boundaryVisible){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}
+  const c=projectCircle(e,camera),x=c.x,y=c.y,r=c.r;
+  let boundaryVisible;
+  if(!Number.isFinite(r)||r>1e9){
+   const boundary=giantCircleLine(e,camera,canvas.width,canvas.height);
+   if(boundary.type==='none')boundaryVisible=false;
+   else{ctx.beginPath();ctx.moveTo(boundary.x1,boundary.y1);ctx.lineTo(boundary.x2,boundary.y2);ctx.stroke();boundaryVisible=true;}
+  }else if(Number.isFinite(x)&&Number.isFinite(y))boundaryVisible=drawCircleBoundary(x,y,r);
+  else boundaryVisible=false;
+  if(c.b<0n&&boundaryVisible&&[x,y,r].every(Number.isFinite)){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}
   else if(c.b>0n&&r>10&&x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height)drawFittedLabel(labelTerms(c.b),x,y,r);
  }
 }
 
 function zoomAt(oldX,oldY,newX,newY,factor){
- const nextZoom=zoom*factor;
- if(!Number.isFinite(nextZoom)||nextZoom<=0)return false;
- const wx=(oldX-offsetX)/zoom,wy=-(oldY-offsetY)/zoom;
- zoom=nextZoom;offsetX=newX-wx*zoom;offsetY=newY+wy*zoom;
+ if(!Number.isFinite(factor)||factor<=0)return false;
+ camera.screenX=newX+(camera.screenX-oldX)*factor;
+ camera.screenY=newY+(camera.screenY-oldY)*factor;
+ camera.scale=multiplyScale(camera.scale,factor);
  return true;
 }
 
 function animateHome(){
  cancelHomeAnimation();
- const target=fitOuterFor(currentConfig,canvas.width,canvas.height);
- const start={zoom,centerX:(canvas.width/2-offsetX)/zoom,centerY:(offsetY-canvas.height/2)/zoom};
- const end={zoom:target.zoom,centerX:(canvas.width/2-target.offsetX)/target.zoom,centerY:(target.offsetY-canvas.height/2)/target.zoom};
+ const outer=currentConfig.find(c=>c.b<0n)||currentConfig[0];
+ const target=fitOuterFor(currentConfig,canvas.width,canvas.height),targetScale=scaleFromNumber(target.zoom);
  if(matchMedia('(prefers-reduced-motion: reduce)').matches){
-  zoom=target.zoom;offsetX=target.offsetX;offsetY=target.offsetY;update();draw();return;
+  camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,targetScale);update();draw();return;
  }
- const started=performance.now(),logStart=Math.log(start.zoom),logEnd=Math.log(end.zoom);
+ const started=performance.now(),logStart=scaleLog(camera.scale),logEnd=scaleLog(targetScale);
  const zoomDistance=Math.abs(logEnd-logStart);
  // Match a steady, ordinary mouse-wheel pace (about six 100-unit notches per
  // second) using the same sensitivity as manual zooming.
  const zoomDuration=zoomDistance<1e-9?0:Math.max(HOME_MIN_DURATION_MS,
   zoomDistance/(WHEEL_ZOOM_SENSITIVITY*HOME_WHEEL_DELTA_PER_SECOND)*1000);
- const centerDistance=Math.hypot(end.centerX-start.centerX,end.centerY-start.centerY);
- const panDuration=centerDistance<1e-12?0:HOME_RECENTER_DURATION_MS;
+ const panDuration=HOME_RECENTER_DURATION_MS;
  const duration=zoomDuration+panDuration;
+ let panStart=null;
  function step(now){
   const elapsed=now-started;
-  let centerX=start.centerX,centerY=start.centerY;
   if(elapsed<zoomDuration){
-   // Keep the viewed point centered while circles shrink at a steady rate.
    const t=elapsed/zoomDuration;
-   zoom=Math.exp(logStart+(logEnd-logStart)*t);
+   const desired=logStart+(logEnd-logStart)*t,currentLog=scaleLog(camera.scale),factor=Math.exp(desired-currentLog);
+   zoomAt(canvas.width/2,canvas.height/2,canvas.width/2,canvas.height/2,factor);
   }else{
-   // Once the home scale is reached, recenter the already-visible packing.
-   zoom=end.zoom;
+   if(!panStart){
+    const factor=Math.exp(logEnd-scaleLog(camera.scale));
+    zoomAt(canvas.width/2,canvas.height/2,canvas.width/2,canvas.height/2,factor);
+    const outerScreen=projectCircle(outer,camera);
+    panStart={anchorX:camera.screenX,anchorY:camera.screenY,outerX:outerScreen.x,outerY:outerScreen.y};
+   }
    const t=panDuration?Math.min(1,(elapsed-zoomDuration)/panDuration):1;
    const eased=t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
-   centerX=start.centerX+(end.centerX-start.centerX)*eased;
-   centerY=start.centerY+(end.centerY-start.centerY)*eased;
+   camera.screenX=panStart.anchorX+(canvas.width/2-panStart.outerX)*eased;
+   camera.screenY=panStart.anchorY+(canvas.height/2-panStart.outerY)*eased;
   }
-  offsetX=canvas.width/2-centerX*zoom;offsetY=canvas.height/2+centerY*zoom;
   update();draw();
   if(elapsed<duration)homeFrame=requestAnimationFrame(step);
-  else{zoom=target.zoom;offsetX=target.offsetX;offsetY=target.offsetY;homeFrame=null;update();draw();}
+  else{camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,targetScale);homeFrame=null;update();draw();}
  }
  homeFrame=requestAnimationFrame(step);
 }
@@ -258,7 +278,7 @@ customForm.addEventListener('submit',e=>{
   let entry=customConfigs.find(candidate=>candidate.id===id);
   if(!entry){entry={id,name,config:configurationFromCurvatures(bends)};customConfigs.push(entry);}
   currentConfig=entry.config;current=entry.id;
-  root=createTree(currentConfig);setCustomForm(false);rebuild();renderCards();
+  setCustomForm(false);rebuild();renderCards();
  }catch(error){customError.textContent=error.message;}
 });
 
@@ -288,7 +308,7 @@ canvas.addEventListener('pointermove',e=>{
  e.preventDefault();pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
  const next=currentGesture();let changed=false;
  if(gesture?.type==='pan'&&next?.type==='pan'){
-  offsetX+=next.x-gesture.x;offsetY+=next.y-gesture.y;changed=true;
+  camera.screenX+=next.x-gesture.x;camera.screenY+=next.y-gesture.y;changed=true;
  }else if(gesture?.type==='pinch'&&next?.type==='pinch'){
   const rect=canvas.getBoundingClientRect();
   changed=zoomAt(gesture.x-rect.left,gesture.y-rect.top,next.x-rect.left,next.y-rect.top,next.distance/gesture.distance);
