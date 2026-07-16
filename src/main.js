@@ -4,11 +4,13 @@ import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
 import {cameraForCircle,giantCircleLine,multiplyScale,projectCircle,reanchorCamera,scaleFromNumber,scaleLog,visibleTreeProjected} from './exactViewport.js';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
+import {randomRootCurvatures} from './randomConfig.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
 const factorToggle=document.getElementById('factor-toggle');
 const homeButton=document.getElementById('home-button');
+const randomButton=document.getElementById('random-button');
 const customButton=document.getElementById('custom-button');
 const customForm=document.getElementById('custom-form');
 const customInput=document.getElementById('custom-curvatures');
@@ -23,6 +25,7 @@ const HOME_RECENTER_DURATION_MS=650;
 let current=Object.keys(presets)[0],currentConfig=presets[current],circles=[],camera=null;
 let allowedResidues=new Set(),residueColors=new Map(),selectedResidues=new Set();
 const customConfigs=[];
+const presetBends=Object.keys(presets).map(name=>parseCurvatures(name));
 const pointers=new Map();let gesture=null;
 let homeFrame=null;
 
@@ -306,15 +309,19 @@ function setCustomForm(open){
 }
 customButton.addEventListener('click',()=>setCustomForm(customForm.hidden));
 customCancel.addEventListener('click',()=>setCustomForm(false));
+function selectAddedConfiguration(bends){
+ const name=`(${bends.join(',')})`,id=`custom:${name}`;
+ let entry=customConfigs.find(candidate=>candidate.id===id);
+ if(!entry){entry={id,name,config:configurationFromCurvatures(bends)};customConfigs.push(entry);}
+ currentConfig=entry.config;current=entry.id;
+ selectedResidues.clear();setCustomForm(false);renderResidues();rebuild();renderCards();
+}
+randomButton.addEventListener('click',()=>selectAddedConfiguration(randomRootCurvatures([...presetBends,...customConfigs.map(entry=>parseCurvatures(entry.name))])));
 customForm.addEventListener('submit',e=>{
  e.preventDefault();
  try{
   const bends=completeCurvatures(parseCurvatures(customInput.value));
-  const name=`(${bends.join(',')})`,id=`custom:${name}`;
-  let entry=customConfigs.find(candidate=>candidate.id===id);
-  if(!entry){entry={id,name,config:configurationFromCurvatures(bends)};customConfigs.push(entry);}
-  currentConfig=entry.config;current=entry.id;
-  selectedResidues.clear();setCustomForm(false);renderResidues();rebuild();renderCards();
+  selectAddedConfiguration(bends);
  }catch(error){customError.textContent=error.message;}
 });
 
