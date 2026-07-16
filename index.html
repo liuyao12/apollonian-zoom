@@ -45,7 +45,7 @@ canvas{display:block;background:white}
 #residue-panel{position:fixed;z-index:9;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));padding:9px;border:1px solid #bbb;border-radius:9px;background:rgba(255,255,255,.94);box-shadow:0 2px 8px #0002;user-select:none}
 .residue-title{font-size:12px;font-weight:700;margin:0 0 2px}
 .residue-help{font-size:10px;color:#555;margin:0 0 7px}
-#residue-buttons{display:grid;grid-template-columns:repeat(6,36px);gap:4px}
+#residue-buttons{display:grid;grid-template-columns:repeat(8,36px);gap:4px}
 .residue-button{width:36px;height:36px;padding:0;border:1px solid #aaa;border-radius:5px;background:#fff;color:#111;font:600 12px sans-serif;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .residue-button:not(:disabled){border-color:var(--residue-color);color:var(--residue-color);box-shadow:inset 0 -3px 0 var(--residue-color)}
 .residue-button:hover:not(:disabled){background:#f3f5f7}
@@ -53,9 +53,9 @@ canvas{display:block;background:white}
 .residue-button:disabled{background:#e7e7e7;border-color:#d1d1d1;color:#aaa;cursor:not-allowed}
 .residue-button:focus-visible{outline:2px solid #2673d9;outline-offset:1px}
 @media(max-width:600px){
- #residue-buttons{grid-template-columns:repeat(4,40px)}
- .residue-button{width:40px;height:40px}
- .residue-help{max-width:170px}
+ #residue-panel{z-index:11;left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));padding:8px}
+ #residue-buttons{grid-template-columns:repeat(8,minmax(0,1fr));gap:3px}
+ .residue-button{width:100%;height:40px}
 }
 </style>
 </head>
@@ -80,7 +80,7 @@ canvas{display:block;background:white}
 <button id="home-button" type="button" aria-label="Return to home view" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3.8l8.5 6.7M5.8 9.2v10.5h12.4V9.2M9.5 19.7v-6.2h5v6.2"/></svg></button>
 <section id="residue-panel" aria-label="Curvature residue classes modulo 24">
 <div class="residue-title">Local–global mod 24</div>
-<div class="residue-help">Admissible curvature residues</div>
+<div class="residue-help">Rows mod 3 · columns mod 8</div>
 <div id="residue-buttons"></div>
 </section>
 <script type="module" src="src/main.js"></script>

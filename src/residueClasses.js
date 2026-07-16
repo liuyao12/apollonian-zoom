@@ -5,6 +5,13 @@ export function residueMod(value,modulus=RESIDUE_MODULUS){
  return Number((n%m+m)%m);
 }
 
+export function residueFromMod3Mod8(mod3,mod8){
+ for(let residue=0;residue<RESIDUE_MODULUS;residue++){
+  if(residue%3===residueMod(mod3,3)&&residue%8===residueMod(mod8,8))return residue;
+ }
+ throw new Error('No residue satisfies the requested congruences');
+}
+
 // The four Descartes reflections generate the packing. Reducing them modulo
 // 24 makes the orbit finite, so this closure gives exactly the curvature
 // residues that can occur anywhere in the packing.

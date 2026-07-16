@@ -3,7 +3,7 @@ import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
 import {cameraForCircle,giantCircleLine,multiplyScale,projectCircle,reanchorCamera,scaleFromNumber,scaleLog,visibleTreeProjected} from './exactViewport.js';
-import {admissibleResidues,residueMod} from './residueClasses.js';
+import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
@@ -102,12 +102,14 @@ function renderResidues(){
  allowedResidues=new Set(residues);residueColors=new Map(residues.map((residue,index)=>[residue,RESIDUE_PALETTE[index%RESIDUE_PALETTE.length]]));
  selectedResidues=new Set([...selectedResidues].filter(residue=>allowedResidues.has(residue)));
  residueButtons.replaceChildren();
- for(let residue=0;residue<24;residue++){
+ for(let mod3=0;mod3<3;mod3++)for(let mod8=0;mod8<8;mod8++){
+  const residue=residueFromMod3Mod8(mod3,mod8);
   const button=document.createElement('button'),allowed=allowedResidues.has(residue);
   button.type='button';button.className='residue-button';button.textContent=String(residue);
+  button.dataset.mod3=String(mod3);button.dataset.mod8=String(mod8);
   if(allowed)button.style.setProperty('--residue-color',residueColors.get(residue));
   button.disabled=!allowed;button.setAttribute('aria-pressed',String(selectedResidues.has(residue)));
-  button.setAttribute('aria-label',allowed?`Show curvatures congruent to ${residue} modulo 24`:`Residue ${residue} is not admissible modulo 24`);
+  button.setAttribute('aria-label',allowed?`Show residue ${residue} modulo 24; ${mod3} modulo 3 and ${mod8} modulo 8`:`Residue ${residue} is not admissible modulo 24; ${mod3} modulo 3 and ${mod8} modulo 8`);
   button.addEventListener('click',()=>{if(selectedResidues.has(residue))selectedResidues.delete(residue);else selectedResidues.add(residue);renderResidues();draw();});
   residueButtons.appendChild(button);
  }

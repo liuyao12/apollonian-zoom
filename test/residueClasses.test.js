@@ -1,12 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {presets} from '../src/presets.js';
-import {admissibleResidues,residueMod} from '../src/residueClasses.js';
+import {admissibleResidues,residueFromMod3Mod8,residueMod} from '../src/residueClasses.js';
 
 test('normalizes signed residues modulo 24',()=>{
  assert.equal(residueMod(-1n),23);
  assert.equal(residueMod(24n),0);
  assert.equal(residueMod(49n),1);
+});
+
+test('lays out all mod-24 residues by their mod-3 and mod-8 coordinates',()=>{
+ const grid=[];
+ for(let mod3=0;mod3<3;mod3++)for(let mod8=0;mod8<8;mod8++)grid.push(residueFromMod3Mod8(mod3,mod8));
+ assert.equal(new Set(grid).size,24);
+ grid.forEach((residue,index)=>{
+  assert.equal(residue%3,Math.floor(index/8));
+  assert.equal(residue%8,index%8);
+ });
 });
 
 const expected={
