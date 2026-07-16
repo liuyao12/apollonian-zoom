@@ -18,6 +18,7 @@ const customCancel=document.getElementById('custom-cancel');
 const customError=document.getElementById('custom-error');
 const residueButtons=document.getElementById('residue-buttons');
 const MIN_CIRCLE_RADIUS_PX=2;
+const PRIME_GLOW_MIN_RADIUS_PX=5;
 const RESIDUE_PALETTE=['#1565c0','#d35400','#14805e','#b13b72','#6f42c1','#8c564b','#00838f','#c62828'];
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
@@ -32,6 +33,9 @@ let homeFrame=null;
 const factorWorker=new Worker(new URL('./factorWorker.js',import.meta.url),{type:'module'});
 const factorCache=new Map(),factorQueue=[],factorQueued=new Set();
 let factorLabels=false,factorActive=null;
+const primeWorker=new Worker(new URL('./factorWorker.js',import.meta.url),{type:'module'});
+const primeCache=new Map(),primeQueue=[],primeQueued=new Set();
+let primeActive=null;
 
 function pumpFactorQueue(){
  if(factorActive!==null||factorQueue.length===0)return;
@@ -48,8 +52,9 @@ function requestFactors(value){
 function resetFactorQueue(){factorQueue.length=0;factorQueued.clear();}
 
 factorWorker.onmessage=e=>{
- const {value,terms}=e.data;
+ const {value,terms,prime}=e.data;
  factorCache.set(value,terms);factorActive=null;
+ if(typeof prime==='boolean')primeCache.set(value,prime);
  draw();pumpFactorQueue();
 };
 
@@ -60,8 +65,32 @@ factorWorker.onerror=()=>{
 };
 
 factorToggle.onchange=()=>{
- factorLabels=factorToggle.checked;resetFactorQueue();draw();
+ factorLabels=factorToggle.checked;resetFactorQueue();
+ if(!factorLabels)resetPrimeQueue();draw();
 };
+
+function pumpPrimeQueue(){
+ if(primeActive!==null||primeQueue.length===0)return;
+ primeActive=primeQueue.shift();primeQueued.delete(primeActive);
+ primeWorker.postMessage({value:primeActive,mode:'prime'});
+}
+function requestPrime(value){
+ const key=value.toString();
+ if(primeCache.has(key)||primeActive===key||primeQueued.has(key))return;
+ primeQueue.push(key);primeQueued.add(key);pumpPrimeQueue();
+}
+function resetPrimeQueue(){primeQueue.length=0;primeQueued.clear();}
+function primeState(value){
+ if(value<2n)return false;
+ const key=value.toString();
+ if(primeCache.has(key))return primeCache.get(key);
+ requestPrime(value);return null;
+}
+primeWorker.onmessage=e=>{
+ const {value,prime}=e.data;primeCache.set(value,prime);primeActive=null;
+ draw();pumpPrimeQueue();
+};
+primeWorker.onerror=()=>{primeActive=null;resetPrimeQueue();};
 
 function fitOuterFor(config,w,h){
  const outer=config.find(c=>c.b<0n)||config[0];
@@ -227,25 +256,39 @@ function drawCircleBoundary(x,y,r){
  ctx.stroke();return true;
 }
 
+function strokeProjectedBoundary(e,c){
+ const {x,y,r}=c;
+ if(!Number.isFinite(r)||r>1e9){
+  const boundary=giantCircleLine(e,camera,canvas.width,canvas.height);
+  if(boundary.type==='none')return false;
+  ctx.beginPath();ctx.moveTo(boundary.x1,boundary.y1);ctx.lineTo(boundary.x2,boundary.y2);ctx.stroke();return true;
+ }
+ return Number.isFinite(x)&&Number.isFinite(y)?drawCircleBoundary(x,y,r):false;
+}
+
 function draw(){
  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.textAlign='center';ctx.textBaseline='middle';
  const filtering=selectedResidues.size>0;
  const drawOrder=!filtering?circles:[...circles].sort((a,b)=>Number(selectedResidues.has(residueMod(a.b)))-Number(selectedResidues.has(residueMod(b.b))));
- for(const e of drawOrder){
-  const c=projectCircle(e,camera),x=c.x,y=c.y,r=c.r;
+ const items=drawOrder.map(e=>({e,c:projectCircle(e,camera)})),glowing=new Set();
+ if(factorLabels)for(const {e,c} of items){
+  if(e.b<2n||c.r<PRIME_GLOW_MIN_RADIUS_PX||primeState(e.b)!==true)continue;
+  if(e.neighborBends?.some(bend=>primeState(bend)===true))glowing.add(e);
+ }
+ for(const {e,c} of items){
+  const {x,y,r}=c;
   const residue=residueMod(c.b),highlighted=!filtering||selectedResidues.has(residue);
   const residueColor=residueColors.get(residue)||'#111';
+  if(glowing.has(e)){
+   ctx.save();ctx.strokeStyle=residueColor;ctx.lineWidth=4;ctx.globalAlpha=.9;
+   ctx.shadowColor=residueColor;ctx.shadowBlur=Math.min(22,Math.max(9,r*.16));
+   strokeProjectedBoundary(e,c);ctx.restore();
+  }
   ctx.strokeStyle=highlighted?residueColor:'rgba(0,0,0,.14)';
   ctx.fillStyle=highlighted?residueColor:'rgba(0,0,0,.18)';
   ctx.lineWidth=filtering&&highlighted?2.5:1;
-  let boundaryVisible;
-  if(!Number.isFinite(r)||r>1e9){
-   const boundary=giantCircleLine(e,camera,canvas.width,canvas.height);
-   if(boundary.type==='none')boundaryVisible=false;
-   else{ctx.beginPath();ctx.moveTo(boundary.x1,boundary.y1);ctx.lineTo(boundary.x2,boundary.y2);ctx.stroke();boundaryVisible=true;}
-  }else if(Number.isFinite(x)&&Number.isFinite(y))boundaryVisible=drawCircleBoundary(x,y,r);
-  else boundaryVisible=false;
+  const boundaryVisible=strokeProjectedBoundary(e,c);
   if(c.b<0n&&boundaryVisible&&[x,y,r].every(Number.isFinite)){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}
   else if(c.b>0n&&r>10&&x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height)drawFittedLabel(labelTerms(c.b),x,y,r);
  }

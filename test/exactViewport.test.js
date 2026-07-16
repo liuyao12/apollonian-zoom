@@ -27,6 +27,15 @@ test('finds deep visible circles without a floating-point world viewport',()=>{
  assert.ok(visible.length<5000,`unexpectedly visited ${visible.length} visible circles`);
 });
 
+test('retains exact visible tangencies for arithmetic overlays',()=>{
+ const config=presets['(-1,2,2,3)'];
+ const outer=config.find(c=>c.b<0n),camera=cameraForCircle(outer,500,350,scaleFromBigInt(1n,280));
+ const visible=visibleTreeProjected(config,camera,1000,700,20);
+ const bend3=visible.find(c=>c.b===3n),bend2=visible.find(c=>c.b===2n);
+ assert.ok(bend3?.neighborBends.includes(2n));
+ assert.ok(bend2?.neighborBends.includes(3n));
+});
+
 test('draws an overflowing ancestor circle as its local tangent line',()=>{
  let config=presets['(-1,2,2,3)'],target;
  for(let step=1;step<=4000;step++){

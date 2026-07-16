@@ -10,7 +10,8 @@ function modPow(base,exponent,modulus){
  return result;
 }
 
-function isProbablePrime(n){
+export function isProbablePrime(n){
+ n=BigInt(n);
  if(n<2n)return false;
  const small=[2n,3n,5n,7n,11n,13n,17n,19n,23n,29n,31n,37n];
  for(const p of small){if(n===p)return true;if(n%p===0n)return false;}

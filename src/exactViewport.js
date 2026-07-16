@@ -164,21 +164,35 @@ function circleKey(c){return `${c.b},${c.bx.n}/${c.bx.d},${c.by.n}/${c.by.d}`;}
 // This traversal is intentionally stateless. Deep branches from old frames are
 // not retained, so memory tracks the current viewport rather than zoom history.
 export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2){
- const result=[],seen=new Set(),stack=[];
+ const result=[],seen=new Set(),records=new Map(),touching=new Map(),stack=[];
  function radiusPixels(c){return camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);}
  function addCircle(c){
   if(radiusPixels(c)<minRadiusPx||!boundsIntersect(circleBounds(c,camera),width,height,minRadiusPx))return;
-  const key=circleKey(c);if(!seen.has(key)){seen.add(key);result.push(circle(c));}
+  const key=circleKey(c);
+  if(!seen.has(key)){
+   const record=circle(c);seen.add(key);records.set(key,record);result.push(record);
+  }
  }
- config.forEach(addCircle);
+ function registerTangencies(q){
+  for(let i=0;i<4;i++)for(let j=i+1;j<4;j++){
+   const a=circleKey(q[i]),b=circleKey(q[j]);
+   if(!touching.has(a))touching.set(a,new Map());
+   if(!touching.has(b))touching.set(b,new Map());
+   touching.get(a).set(b,q[j].b);touching.get(b).set(a,q[i].b);
+  }
+ }
+ config.forEach(addCircle);registerTangencies(config);
  for(let i=0;i<4;i++)stack.push({config:reflect(config,i),replaced:i});
  while(stack.length){
   const node=stack.pop(),candidate=node.config[node.replaced];
   if(radiusPixels(candidate)<minRadiusPx)continue;
   const bounds=projectedBounds(valleyPoints(node.config,node.replaced),camera);
   if(!boundsIntersect(bounds,width,height,minRadiusPx))continue;
-  addCircle(candidate);
+  addCircle(candidate);registerTangencies(node.config);
   for(let i=0;i<4;i++)if(i!==node.replaced)stack.push({config:reflect(node.config,i),replaced:i});
+ }
+ for(const [key,record] of records){
+  record.neighborBends=[...(touching.get(key)||[])].filter(([neighbor])=>seen.has(neighbor)).map(([,bend])=>bend);
  }
  return result;
 }
