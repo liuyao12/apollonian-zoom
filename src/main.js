@@ -3,6 +3,7 @@ import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
 import {cameraForCircle,giantCircleLine,multiplyScale,projectCircle,reanchorCamera,scaleFromNumber,scaleLog,visibleTreeProjected} from './exactViewport.js';
+import {admissibleResidues,residueMod} from './residueClasses.js';
 
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
 const panel=document.getElementById('presets');
@@ -13,11 +14,14 @@ const customForm=document.getElementById('custom-form');
 const customInput=document.getElementById('custom-curvatures');
 const customCancel=document.getElementById('custom-cancel');
 const customError=document.getElementById('custom-error');
+const residueButtons=document.getElementById('residue-buttons');
 const MIN_CIRCLE_RADIUS_PX=2;
+const RESIDUE_PALETTE=['#1565c0','#d35400','#14805e','#b13b72','#6f42c1','#8c564b','#00838f','#c62828'];
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
 let current=Object.keys(presets)[0],currentConfig=presets[current],circles=[],camera=null;
+let allowedResidues=new Set(),residueColors=new Map(),selectedResidue=null;
 const customConfigs=[];
 const pointers=new Map();let gesture=null;
 let homeFrame=null;
@@ -86,11 +90,27 @@ function renderCards(){
   const label=document.createElement('div');label.className='label';label.textContent=name;
   d.appendChild(t);d.appendChild(label);
   d.className='card'+(id===current?' selected':'');
-  d.onclick=()=>{current=id;currentConfig=config;rebuild();renderCards();};
+  d.onclick=()=>{current=id;currentConfig=config;selectedResidue=null;renderResidues();rebuild();renderCards();};
   panel.appendChild(d);drawThumbnail(t,config);
  }
  for(const name of Object.keys(presets))appendCard(name,presets[name],name);
  for(const entry of customConfigs)appendCard(entry.name,entry.config,entry.id);
+}
+
+function renderResidues(){
+ const residues=admissibleResidues(currentConfig);
+ allowedResidues=new Set(residues);residueColors=new Map(residues.map((residue,index)=>[residue,RESIDUE_PALETTE[index%RESIDUE_PALETTE.length]]));
+ if(selectedResidue!==null&&!allowedResidues.has(selectedResidue))selectedResidue=null;
+ residueButtons.replaceChildren();
+ for(let residue=0;residue<24;residue++){
+  const button=document.createElement('button'),allowed=allowedResidues.has(residue);
+  button.type='button';button.className='residue-button';button.textContent=String(residue);
+  if(allowed)button.style.setProperty('--residue-color',residueColors.get(residue));
+  button.disabled=!allowed;button.setAttribute('aria-pressed',String(selectedResidue===residue));
+  button.setAttribute('aria-label',allowed?`Highlight curvatures congruent to ${residue} modulo 24`:`Residue ${residue} is not admissible modulo 24`);
+  button.addEventListener('click',()=>{selectedResidue=selectedResidue===residue?null:residue;renderResidues();draw();});
+  residueButtons.appendChild(button);
+ }
 }
 
 function update(){
@@ -204,9 +224,15 @@ function drawCircleBoundary(x,y,r){
 
 function draw(){
  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
- ctx.strokeStyle='black';ctx.fillStyle='black';ctx.textAlign='center';ctx.textBaseline='middle';
- for(const e of circles){
+ ctx.textAlign='center';ctx.textBaseline='middle';
+ const drawOrder=selectedResidue===null?circles:[...circles].sort((a,b)=>Number(residueMod(a.b)===selectedResidue)-Number(residueMod(b.b)===selectedResidue));
+ for(const e of drawOrder){
   const c=projectCircle(e,camera),x=c.x,y=c.y,r=c.r;
+  const residue=residueMod(c.b),highlighted=selectedResidue===null||residue===selectedResidue;
+  const residueColor=residueColors.get(residue)||'#111';
+  ctx.strokeStyle=highlighted?residueColor:'rgba(0,0,0,.14)';
+  ctx.fillStyle=highlighted?residueColor:'rgba(0,0,0,.18)';
+  ctx.lineWidth=selectedResidue!==null&&highlighted?2.5:1;
   let boundaryVisible;
   if(!Number.isFinite(r)||r>1e9){
    const boundary=giantCircleLine(e,camera,canvas.width,canvas.height);
@@ -217,6 +243,7 @@ function draw(){
   if(c.b<0n&&boundaryVisible&&[x,y,r].every(Number.isFinite)){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}
   else if(c.b>0n&&r>10&&x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height)drawFittedLabel(labelTerms(c.b),x,y,r);
  }
+ ctx.lineWidth=1;
 }
 
 function zoomAt(oldX,oldY,newX,newY,factor){
@@ -284,7 +311,7 @@ customForm.addEventListener('submit',e=>{
   let entry=customConfigs.find(candidate=>candidate.id===id);
   if(!entry){entry={id,name,config:configurationFromCurvatures(bends)};customConfigs.push(entry);}
   currentConfig=entry.config;current=entry.id;
-  setCustomForm(false);rebuild();renderCards();
+  selectedResidue=null;setCustomForm(false);renderResidues();rebuild();renderCards();
  }catch(error){customError.textContent=error.message;}
 });
 
@@ -331,4 +358,4 @@ canvas.addEventListener('pointerup',endPointer);
 canvas.addEventListener('pointercancel',endPointer);
 canvas.addEventListener('lostpointercapture',endPointer);
 
-resize();renderCards();
+renderResidues();resize();renderCards();
