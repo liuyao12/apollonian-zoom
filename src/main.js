@@ -21,7 +21,7 @@ const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
 let current=Object.keys(presets)[0],currentConfig=presets[current],circles=[],camera=null;
-let allowedResidues=new Set(),residueColors=new Map(),selectedResidue=null;
+let allowedResidues=new Set(),residueColors=new Map(),selectedResidues=new Set();
 const customConfigs=[];
 const pointers=new Map();let gesture=null;
 let homeFrame=null;
@@ -90,7 +90,7 @@ function renderCards(){
   const label=document.createElement('div');label.className='label';label.textContent=name;
   d.appendChild(t);d.appendChild(label);
   d.className='card'+(id===current?' selected':'');
-  d.onclick=()=>{current=id;currentConfig=config;selectedResidue=null;renderResidues();rebuild();renderCards();};
+  d.onclick=()=>{current=id;currentConfig=config;selectedResidues.clear();renderResidues();rebuild();renderCards();};
   panel.appendChild(d);drawThumbnail(t,config);
  }
  for(const name of Object.keys(presets))appendCard(name,presets[name],name);
@@ -100,15 +100,15 @@ function renderCards(){
 function renderResidues(){
  const residues=admissibleResidues(currentConfig);
  allowedResidues=new Set(residues);residueColors=new Map(residues.map((residue,index)=>[residue,RESIDUE_PALETTE[index%RESIDUE_PALETTE.length]]));
- if(selectedResidue!==null&&!allowedResidues.has(selectedResidue))selectedResidue=null;
+ selectedResidues=new Set([...selectedResidues].filter(residue=>allowedResidues.has(residue)));
  residueButtons.replaceChildren();
  for(let residue=0;residue<24;residue++){
   const button=document.createElement('button'),allowed=allowedResidues.has(residue);
   button.type='button';button.className='residue-button';button.textContent=String(residue);
   if(allowed)button.style.setProperty('--residue-color',residueColors.get(residue));
-  button.disabled=!allowed;button.setAttribute('aria-pressed',String(selectedResidue===residue));
-  button.setAttribute('aria-label',allowed?`Highlight curvatures congruent to ${residue} modulo 24`:`Residue ${residue} is not admissible modulo 24`);
-  button.addEventListener('click',()=>{selectedResidue=selectedResidue===residue?null:residue;renderResidues();draw();});
+  button.disabled=!allowed;button.setAttribute('aria-pressed',String(selectedResidues.has(residue)));
+  button.setAttribute('aria-label',allowed?`Show curvatures congruent to ${residue} modulo 24`:`Residue ${residue} is not admissible modulo 24`);
+  button.addEventListener('click',()=>{if(selectedResidues.has(residue))selectedResidues.delete(residue);else selectedResidues.add(residue);renderResidues();draw();});
   residueButtons.appendChild(button);
  }
 }
@@ -225,14 +225,15 @@ function drawCircleBoundary(x,y,r){
 function draw(){
  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.textAlign='center';ctx.textBaseline='middle';
- const drawOrder=selectedResidue===null?circles:[...circles].sort((a,b)=>Number(residueMod(a.b)===selectedResidue)-Number(residueMod(b.b)===selectedResidue));
+ const filtering=selectedResidues.size>0;
+ const drawOrder=!filtering?circles:[...circles].sort((a,b)=>Number(selectedResidues.has(residueMod(a.b)))-Number(selectedResidues.has(residueMod(b.b))));
  for(const e of drawOrder){
   const c=projectCircle(e,camera),x=c.x,y=c.y,r=c.r;
-  const residue=residueMod(c.b),highlighted=selectedResidue===null||residue===selectedResidue;
+  const residue=residueMod(c.b),highlighted=!filtering||selectedResidues.has(residue);
   const residueColor=residueColors.get(residue)||'#111';
   ctx.strokeStyle=highlighted?residueColor:'rgba(0,0,0,.14)';
   ctx.fillStyle=highlighted?residueColor:'rgba(0,0,0,.18)';
-  ctx.lineWidth=selectedResidue!==null&&highlighted?2.5:1;
+  ctx.lineWidth=filtering&&highlighted?2.5:1;
   let boundaryVisible;
   if(!Number.isFinite(r)||r>1e9){
    const boundary=giantCircleLine(e,camera,canvas.width,canvas.height);
@@ -311,7 +312,7 @@ customForm.addEventListener('submit',e=>{
   let entry=customConfigs.find(candidate=>candidate.id===id);
   if(!entry){entry={id,name,config:configurationFromCurvatures(bends)};customConfigs.push(entry);}
   currentConfig=entry.config;current=entry.id;
-  selectedResidue=null;setCustomForm(false);renderResidues();rebuild();renderCards();
+  selectedResidues.clear();setCustomForm(false);renderResidues();rebuild();renderCards();
  }catch(error){customError.textContent=error.message;}
 });
 
