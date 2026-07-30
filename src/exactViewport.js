@@ -3,12 +3,13 @@ import {circle,reflect} from './apollonianBigInt.js';
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
 
 function abs(n){return n<0n?-n:n;}
-function gcd(a,b){a=abs(a);b=abs(b);while(b){const r=a%b;a=b;b=r;}return a;}
+// Projection only needs an exact numerator/denominator ratio, not a reduced
+// fraction. Avoiding GCDs here is what keeps very large BigInt views interactive.
 function fraction(n,d=1n){
  if(d===0n)throw new Error('Division by zero');
  if(d<0n){n=-n;d=-d;}
  if(n===0n)return {n:0n,d:1n};
- const g=gcd(n,d);return {n:n/g,d:d/g};
+ return {n,d};
 }
 function add(a,b){return fraction(a.n*b.d+b.n*a.d,a.d*b.d);}
 function sub(a,b){return fraction(a.n*b.d-b.n*a.d,a.d*b.d);}
@@ -160,20 +161,62 @@ function boundsIntersect(bounds,width,height,margin=0){
 }
 function circleBounds(c,camera){return projectedBounds(circleCardinalPoints(c),camera);}
 function circleKey(c){return `${c.b},${c.bx.n}/${c.bx.d},${c.by.n}/${c.by.d}`;}
+function circleBoundaryIntersects(c,camera,width,height,margin=0){
+ const p=projectCircle(c,camera);
+ if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.r)||p.r>1e9){
+  return giantCircleLine(c,camera,width,height,margin).type!=='none';
+ }
+ const left=-margin,right=width+margin,top=-margin,bottom=height+margin;
+ const nearX=Math.max(left,Math.min(right,p.x)),nearY=Math.max(top,Math.min(bottom,p.y));
+ const nearest=Math.hypot(p.x-nearX,p.y-nearY);
+ const farthest=Math.max(
+  Math.hypot(p.x-left,p.y-top),Math.hypot(p.x-right,p.y-top),
+  Math.hypot(p.x-left,p.y-bottom),Math.hypot(p.x-right,p.y-bottom)
+ );
+ return nearest<=p.r+margin&&farthest>=Math.max(0,p.r-margin);
+}
+function valleyCorners(config,replaced){
+ const boundary=config.filter((_,i)=>i!==replaced);
+ return [
+  tangencyPoint(boundary[0],boundary[1]),
+  tangencyPoint(boundary[0],boundary[2]),
+  tangencyPoint(boundary[1],boundary[2])
+ ];
+}
+function pointInsideExpandedViewport(point,camera,width,height,margin){
+ const p=projectPoint(point,camera);
+ return Number.isFinite(p.x)&&Number.isFinite(p.y)&&
+  p.x>=-margin&&p.x<=width+margin&&p.y>=-margin&&p.y<=height+margin;
+}
+function valleyCornersClear(config,replaced,camera,width,height,margin){
+ return valleyCorners(config,replaced).every(point=>!pointInsideExpandedViewport(point,camera,width,height,margin));
+}
+
+export function traversalStage(config,blockedIndex=null,parent=null,bridgeCircles=[]){
+ return {config,blockedIndex,parent,bridgeCircles};
+}
+
+export function stageNeedsParent(stage,camera,width,height,margin=Math.hypot(width,height)*.5){
+ return stage.blockedIndex!==null&&
+  valleyCorners(stage.config,stage.blockedIndex).some(point=>pointInsideExpandedViewport(point,camera,width,height,margin));
+}
 
 // This traversal is intentionally stateless. Deep branches from old frames are
 // not retained, so memory tracks the current viewport rather than zoom history.
-export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2){
+export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,blockedIndex=null,bridgeCircles=[],trackTangencies=false){
  const result=[],seen=new Set(),records=new Map(),touching=new Map(),stack=[];
+ let nextStage=null,nextStageDepth=0,nextStageDistance=Infinity;
+ const stageStepDepth=18,stageMargin=Math.hypot(width,height);
  function radiusPixels(c){return camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);}
  function addCircle(c){
-  if(radiusPixels(c)<minRadiusPx||!boundsIntersect(circleBounds(c,camera),width,height,minRadiusPx))return;
+  if(radiusPixels(c)<minRadiusPx||!circleBoundaryIntersects(c,camera,width,height,minRadiusPx))return;
   const key=circleKey(c);
   if(!seen.has(key)){
    const record=circle(c);seen.add(key);records.set(key,record);result.push(record);
   }
  }
  function registerTangencies(q){
+  if(!trackTangencies)return;
   for(let i=0;i<4;i++)for(let j=i+1;j<4;j++){
    const a=circleKey(q[i]),b=circleKey(q[j]);
    if(!touching.has(a))touching.set(a,new Map());
@@ -181,19 +224,47 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2){
    touching.get(a).set(b,q[j].b);touching.get(b).set(a,q[i].b);
   }
  }
+ bridgeCircles.forEach(addCircle);
  config.forEach(addCircle);registerTangencies(config);
- for(let i=0;i<4;i++)stack.push({config:reflect(config,i),replaced:i});
+ for(let i=0;i<4;i++)if(i!==blockedIndex)stack.push({
+  config:reflect(config,i),replaced:i,depth:1,safeStage:null,parentNode:null
+ });
  while(stack.length){
   const node=stack.pop(),candidate=node.config[node.replaced];
   if(radiusPixels(candidate)<minRadiusPx)continue;
   const bounds=projectedBounds(valleyPoints(node.config,node.replaced),camera);
   if(!boundsIntersect(bounds,width,height,minRadiusPx))continue;
+  let safeStage=node.safeStage;
+  if(node.depth>=stageStepDepth&&bounds.left<=width/2&&bounds.right>=width/2&&
+   bounds.top<=height/2&&bounds.bottom>=height/2&&
+   valleyCornersClear(node.config,node.replaced,camera,width,height,stageMargin)){
+   safeStage={config:node.config,blockedIndex:node.replaced,depth:node.depth,pathNode:node};
+  }
   addCircle(candidate);registerTangencies(node.config);
-  for(let i=0;i<4;i++)if(i!==node.replaced)stack.push({config:reflect(node.config,i),replaced:i});
+  if(safeStage&&candidate.b>0n){
+   const p=projectCircle(candidate,camera);
+   if(Number.isFinite(p.x)&&Number.isFinite(p.y)&&Number.isFinite(p.r)&&p.r>=minRadiusPx){
+    const distance=Math.hypot(p.x-width/2,p.y-height/2);
+    if(safeStage.depth>nextStageDepth||(safeStage.depth===nextStageDepth&&distance<nextStageDistance)){
+     nextStage=safeStage;nextStageDepth=safeStage.depth;nextStageDistance=distance;
+    }
+   }
+  }
+  for(let i=0;i<4;i++)if(i!==node.replaced)stack.push({
+   config:reflect(node.config,i),replaced:i,depth:node.depth+1,safeStage,parentNode:node
+  });
  }
- for(const [key,record] of records){
-  record.neighborBends=[...(touching.get(key)||[])].filter(([neighbor])=>seen.has(neighbor)).map(([,bend])=>bend);
+ if(trackTangencies)for(const [key,record] of records)
+ record.neighborBends=[...(touching.get(key)||[])].filter(([neighbor])=>seen.has(neighbor)).map(([,bend])=>bend);
+ if(nextStage){
+  const bridges=new Map();
+  for(let node=nextStage.pathNode;node;node=node.parentNode){
+   for(const c of node.config)if(radiusPixels(c)>=minRadiusPx&&
+    circleBoundaryIntersects(c,camera,width,height,minRadiusPx))bridges.set(circleKey(c),c);
+  }
+  nextStage={config:nextStage.config,blockedIndex:nextStage.blockedIndex,bridgeCircles:[...bridges.values()]};
  }
+ Object.defineProperty(result,'nextStage',{value:nextStage});
  return result;
 }
 

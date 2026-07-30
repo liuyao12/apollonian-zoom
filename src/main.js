@@ -2,7 +2,7 @@ import {toFloat,generate} from './apollonianBigInt.js';
 import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,giantCircleLine,multiplyScale,projectCircle,reanchorCamera,scaleFromNumber,scaleLog,visibleTreeProjected} from './exactViewport.js';
+import {cameraForCircle,giantCircleLine,multiplyScale,projectCircle,reanchorCamera,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected} from './exactViewport.js';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 import {randomRootCurvatures} from './randomConfig.js';
 
@@ -23,7 +23,7 @@ const RESIDUE_PALETTE=['#1565c0','#d35400','#14805e','#b13b72','#6f42c1','#8c564
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
-let current=Object.keys(presets)[0],currentConfig=presets[current],circles=[],camera=null;
+let current=Object.keys(presets)[0],currentConfig=presets[current],viewStage=traversalStage(currentConfig),circles=[],camera=null;
 let allowedResidues=new Set(),residueColors=new Map(),selectedResidues=new Set();
 const customConfigs=[];
 const presetBends=Object.keys(presets).map(name=>parseCurvatures(name));
@@ -66,7 +66,9 @@ factorWorker.onerror=()=>{
 
 factorToggle.onchange=()=>{
  factorLabels=factorToggle.checked;resetFactorQueue();
- if(!factorLabels)resetPrimeQueue();draw();
+ if(factorLabels)update();
+ else resetPrimeQueue();
+ draw();
 };
 
 function pumpPrimeQueue(){
@@ -148,7 +150,12 @@ function renderResidues(){
 }
 
 function update(){
- resetFactorQueue();circles=visibleTreeProjected(currentConfig,camera,canvas.width,canvas.height,MIN_CIRCLE_RADIUS_PX);
+ resetFactorQueue();
+ while(viewStage.parent&&stageNeedsParent(viewStage,camera,canvas.width,canvas.height))viewStage=viewStage.parent;
+ circles=visibleTreeProjected(viewStage.config,camera,canvas.width,canvas.height,MIN_CIRCLE_RADIUS_PX,
+  viewStage.blockedIndex,viewStage.bridgeCircles,factorLabels);
+ if(circles.nextStage)viewStage=traversalStage(circles.nextStage.config,circles.nextStage.blockedIndex,viewStage,
+  circles.nextStage.bridgeCircles);
  const centerX=canvas.width/2,centerY=canvas.height/2;
  const viewportDiagonal=Math.hypot(canvas.width,canvas.height);
  const anchorDistance=Math.hypot(camera.screenX-centerX,camera.screenY-centerY);
@@ -171,7 +178,7 @@ function fitOuter(){
  camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,scaleFromNumber(fit.zoom));
 }
 function cancelHomeAnimation(){if(homeFrame!==null){cancelAnimationFrame(homeFrame);homeFrame=null;}}
-function rebuild(){cancelHomeAnimation();fitOuter();update();draw();}
+function rebuild(){cancelHomeAnimation();viewStage=traversalStage(currentConfig);fitOuter();update();draw();}
 function resize(){const rect=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(rect.width));canvas.height=Math.max(1,Math.round(rect.height));rebuild();}
 addEventListener('resize',resize);
 
@@ -339,7 +346,7 @@ function animateHome(){
   }
   update();draw();
   if(elapsed<duration)homeFrame=requestAnimationFrame(step);
-  else{camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,targetScale);homeFrame=null;update();draw();}
+  else{camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,targetScale);viewStage=traversalStage(currentConfig);homeFrame=null;update();draw();}
  }
  homeFrame=requestAnimationFrame(step);
 }

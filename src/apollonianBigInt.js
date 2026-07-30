@@ -5,9 +5,18 @@ function fraction(n,d){
  if(n===0n)return {n:0n,d:1n};
  const g=gcd(n,d);return {n:n/g,d:d/g};
 }
-function add(a,b){a=norm(a);b=norm(b);return fraction(a.n*b.d+b.n*a.d,a.d*b.d);}
-function sub(a,b){a=norm(a);b=norm(b);return fraction(a.n*b.d-b.n*a.d,a.d*b.d);}
-function mulInt(a,k){a=norm(a);return fraction(a.n*k,a.d);}
+// Reflections repeatedly combine bend-centers that already share a
+// denominator. Keep that common denominator instead of running a large GCD
+// after every integer-linear operation; the represented rationals stay exact.
+function add(a,b){
+ a=norm(a);b=norm(b);
+ return a.d===b.d?{n:a.n+b.n,d:a.d}:fraction(a.n*b.d+b.n*a.d,a.d*b.d);
+}
+function sub(a,b){
+ a=norm(a);b=norm(b);
+ return a.d===b.d?{n:a.n-b.n,d:a.d}:fraction(a.n*b.d-b.n*a.d,a.d*b.d);
+}
+function mulInt(a,k){a=norm(a);return {n:a.n*k,d:a.d};}
 function num(a){a=norm(a);return Number(a.n)/Number(a.d);}
 function key(c){return c.b.toString()+','+JSON.stringify(c.bx,(k,v)=>typeof v==='bigint'?v.toString():v)+','+JSON.stringify(c.by,(k,v)=>typeof v==='bigint'?v.toString():v);}
 
