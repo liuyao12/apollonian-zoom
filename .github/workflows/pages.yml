@@ -3,19 +3,43 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Assemble static site
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          rsync -a --exclude='.git' --exclude='.github' --exclude='_site' ./ _site/
+
+          mkdir -p _site/sendov-flow
+          base='https://raw.githubusercontent.com/liuyao12/liuyao.github.io/master/sendov-flow'
+          for file in index.html sendov-flow.css sendov-flow-1.js sendov-flow-2.js sendov-flow-3.js sendov-flow-4.js; do
+            curl --fail --location --silent --show-error "$base/$file" --output "_site/sendov-flow/$file"
+          done
+          touch _site/.nojekyll
+
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
-          path: .
-      - uses: actions/deploy-pages@v4
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
