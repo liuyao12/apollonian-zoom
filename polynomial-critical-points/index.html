@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Polynomial critical landscape</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="toolbar">
+  <label class="ctrl">degree
+    <select id="degreeSelect"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option><option>8</option></select>
+  </label>
+  <button id="resetBtn">Reset</button>
+  <button id="fitBtn">Fit</button>
+  <label class="ctrl"><input id="bgToggle" type="checkbox"> domain color</label>
+  <a class="source-link" href="https://github.com/liuyao12/apollonian-zoom/tree/main/polynomial-critical-points" target="_blank" rel="noopener">Source</a>
+</div>
+
+<section class="card">
+  <div id="plot" class="plot">
+    <canvas id="bgCanvas"></canvas>
+    <svg id="svg" preserveAspectRatio="none"></svg>
+    <div class="hint">drag points · click a stacked point to split it</div>
+    <div class="legend"><span style="color:var(--root)">●</span> roots &nbsp; <span style="color:var(--critical)">●</span> critical points &nbsp; <span style="color:var(--down)">—</span> Newton &nbsp; <span style="color:var(--up)">—</span> ridges</div>
+  </div>
+</section>
+
+<script defer src="core.js"></script>
+<script defer src="model.js"></script>
+<script defer src="view.js"></script>
+</body>
+</html>
