@@ -326,8 +326,8 @@ function animateHome(){
  const zoomDistance=Math.abs(logEnd-logStart);
  // Match a steady, ordinary mouse-wheel pace (about six 100-unit notches per
  // second) using the same sensitivity as manual zooming.
- const zoomDuration=zoomDistance<1e-9?0:Math.min(1400,Math.max(HOME_MIN_DURATION_MS,
-  zoomDistance/(WHEEL_ZOOM_SENSITIVITY*HOME_WHEEL_DELTA_PER_SECOND)*1000));
+ const zoomDuration=zoomDistance<1e-9?0:Math.max(HOME_MIN_DURATION_MS,
+  zoomDistance/(WHEEL_ZOOM_SENSITIVITY*HOME_WHEEL_DELTA_PER_SECOND)*1000);
  const panDuration=HOME_RECENTER_DURATION_MS;
  const duration=zoomDuration+panDuration;
  let panStart=null;
