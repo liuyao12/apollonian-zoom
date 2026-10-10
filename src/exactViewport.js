@@ -1,6 +1,6 @@
 import {circle,reflect} from './apollonianBigInt.js';
 import {ARC_LINE_TOLERANCE_PX,circleBoundaryPrimitive} from './circleRenderer.js';
-import {placeVisibleLabel} from './labelPlacement.js';
+import {placeVisibleLabel} from './labelPlacement.js?v=exterior-opposite';
 
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
 
