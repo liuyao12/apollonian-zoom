@@ -9,7 +9,7 @@ An interactive infinite-zoom explorer for Apollonian circle packings.
 - **Dive deeper** advances through twelve exact Descartes reflections into a smaller gap.
 - **Home** returns to the whole packing. Resizing preserves the current view.
 
-Circle data and camera pivots use BigInt rational arithmetic. Only the final pixel projection uses floating-point numbers. Scale has a separate binary exponent, so zoom is not limited by JavaScript's finite numeric range. Ancestor circles become exact local tangent lines when their curvature differs from a line by less than a quarter pixel across the viewport. Full integers wrap into digit rows where they fit; the inspector retains all digits and offers exact-value copying.
+Circle data and camera pivots use BigInt rational arithmetic. Only the final pixel projection uses floating-point numbers. Scale has a separate binary exponent, so zoom is not limited by JavaScript's finite numeric range. Ancestor circles become straight lines when the local circle equation differs from its linearization by less than a quarter pixel across the viewport. The line coefficients and clipped endpoints are computed with exact rational arithmetic; huge rounded centers and radii are never used to position them. Full integers wrap into digit rows where they fit; the inspector retains all digits and offers exact-value copying.
 
 The regression suite covers successive dives with curvatures exceeding 500 digits, deep pointer pivots, valley transitions, and overflowing ancestor circles.
 

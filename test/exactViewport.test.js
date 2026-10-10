@@ -164,3 +164,34 @@ test('a rotated subpixel cusp also prunes indistinguishable descendants',()=>{
  const visible=visibleTreeProjected(config,camera,1000,700,2);
  assert.equal(visible.filter(c=>projectedBoundary(c,camera,1000,700).type==='line').length,2);
 });
+
+for(const bend of [1n,-1n])test(`places an overflowing circle with bend ${bend} at its exact fractional pixel offset`,()=>{
+ const origin=10n**400n,scale=1n<<2000n;
+ const c={b:bend,bx:{n:(origin+1n)*bend,d:1n},by:{n:origin*bend,d:1n}};
+ const camera=cameraForCircle(c,500,350,scaleFromBigInt(scale));
+ camera.anchorX={n:origin*3n*scale-1n,d:3n*scale};camera.anchorY={n:origin,d:1n};
+ assert.equal(projectCircle(c,camera).r,Infinity);
+ const line=projectedBoundary(c,camera,1000,700);
+ assert.equal(line.type,'line');
+ assert.ok(Math.abs(line.x1-(500+1/3))<1e-10);
+ assert.ok(Math.abs(line.x2-(500+1/3))<1e-10);
+ assert.ok([line.x1,line.x2,line.y1,line.y2].every(Number.isFinite));
+});
+
+test('clips a slanted overflowing circle using exact line coefficients',()=>{
+ const origin=10n**400n,scale=1n<<2000n;
+ const c={b:1n,bx:{n:5n*origin+3n,d:5n},by:{n:5n*origin+4n,d:5n}};
+ const camera=cameraForCircle(c,500,350,scaleFromBigInt(scale));
+ camera.anchorX={n:7n*scale*origin+1n,d:7n*scale};
+ camera.anchorY={n:11n*scale*origin-1n,d:11n*scale};
+ const line=projectedBoundary(c,camera,1000,700);
+ assert.equal(line.type,'line');
+ const residual=(x,y)=>.6*(x-500)-.8*(y-350)+1/77;
+ assert.ok(Math.abs(residual(line.x1,line.y1))<1e-10);
+ assert.ok(Math.abs(residual(line.x2,line.y2))<1e-10);
+ zoomCameraAt(camera,500,350,540,320,2);
+ const moved=projectedBoundary(c,camera,1000,700);
+ const movedResidual=(x,y)=>.6*(x-540)-.8*(y-320)+2/77;
+ assert.ok(Math.abs(movedResidual(moved.x1,moved.y1))<1e-10);
+ assert.ok(Math.abs(movedResidual(moved.x2,moved.y2))<1e-10);
+});

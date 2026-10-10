@@ -15,6 +15,7 @@ function fraction(n,d=1n){
 function add(a,b){return fraction(a.n*b.d+b.n*a.d,a.d*b.d);}
 function sub(a,b){return fraction(a.n*b.d-b.n*a.d,a.d*b.d);}
 function mul(a,b){return fraction(a.n*b.n,a.d*b.d);}
+function div(a,b){return fraction(a.n*b.d,a.d*b.n);}
 function divInt(a,n){return fraction(a.n,a.d*n);}
 function square(a){return mul(a,a);}
 
@@ -203,12 +204,18 @@ function boundsIntersect(bounds,width,height,margin=0){
 }
 function circleBounds(c,camera){return projectedBounds(circleCardinalPoints(c),camera);}
 function circleKey(c){return `${c.b},${c.bx.n}/${c.bx.d},${c.by.n}/${c.by.d}`;}
+function circleLooksStraight(c,camera,width,height,tolerance=ARC_LINE_TOLERANCE_PX){
+ const radius=camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);
+ const diagonal=Math.hypot(width,height);
+ // For the linearized exact circle equation, the omitted quadratic term
+ // is at most diagonal^2/4 within the viewport. This conservative threshold
+ // bounds its boundary displacement by tolerance, including off-center arcs.
+ return radius>=diagonal/2+diagonal*diagonal/(8*tolerance);
+}
 function circleBoundaryIntersects(c,camera,width,height,margin=0){
+ if(circleLooksStraight(c,camera,width,height))
+  return giantCircleLine(c,camera,width,height,margin+ARC_LINE_TOLERANCE_PX).type!=='none';
  const p=projectCircle(c,camera);
- if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.r)||
-  p.r>=Math.hypot(width,height)**2/(8*ARC_LINE_TOLERANCE_PX)){
-  return giantCircleLine(c,camera,width,height,margin).type!=='none';
- }
  const left=-margin,right=width+margin,top=-margin,bottom=height+margin;
  const nearX=Math.max(left,Math.min(right,p.x)),nearY=Math.max(top,Math.min(bottom,p.y));
  const nearest=Math.hypot(p.x-nearX,p.y-nearY);
@@ -250,12 +257,11 @@ function valleyContainsViewport(config,replaced,camera,width,height,margin){
 // of circles whose visible arcs coincide with the two ancestor boundaries.
 function valleyIndistinguishable(config,replaced,camera,width,height){
  const tolerance=ARC_LINE_TOLERANCE_PX/4;
- const threshold=Math.hypot(width,height)**2/(8*tolerance);
  let polygon=[{x:-2,y:-2},{x:width+2,y:-2},{x:width+2,y:height+2},{x:-2,y:height+2}];
  const normals=[];
  for(let i=0;i<4;i++)if(i!==replaced){
-  const c=config[i],radius=camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);
-  if(radius<threshold)continue;
+  const c=config[i];
+  if(!circleLooksStraight(c,camera,width,height,tolerance))continue;
   const tangent=localCircleTangent(c,camera,width,height);
   if(!tangent)continue;
   normals.push({x:tangent.nx,y:tangent.ny});
@@ -364,36 +370,50 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
 
 // Compute a visually indistinguishable tangent line without ever constructing
 // the enormous screen-space center or radius of an ancestor circle.
-function localCircleTangent(c,camera,width,height){
+function localCircleEquation(c,camera,width,height){
  const anchor=worldPointAt(camera,width/2,height/2);
  const center=pointForCircle(c),dx=sub(anchor.x,center.x),dy=sub(anchor.y,center.y),r=radiusFraction(c);
+ const f=sub(add(square(dx),square(dy)),square(r));
+ return {dx,dy,r,f};
+}
+function localCircleTangent(c,camera,width,height){
+ const {dx,dy,r,f}=localCircleEquation(c,camera,width,height);
  const exponent=Math.max(binaryExponent(dx),binaryExponent(dy),binaryExponent(r));
  const dxn=scaledRatioToNumber(dx.n,dx.d,-exponent),dyn=scaledRatioToNumber(dy.n,dy.d,-exponent);
  const distance=Math.hypot(dxn,dyn),rn=scaledRatioToNumber(r.n,r.d,-exponent);
  if(!Number.isFinite(distance)||distance===0||!Number.isFinite(rn))return null;
- const f=sub(add(square(dx),square(dy)),square(r));
- const signed=camera.scale.mantissa*scaledRatioToNumber(f.n,f.d,camera.scale.exponent-exponent)/(distance+rn);
+ const signed=camera.scale.mantissa*scaledRatioToNumber(f.n,f.d,camera.scale.exponent-exponent)/(2*distance);
  const nx=dxn/distance,ny=-dyn/distance;
  return {nx,ny,signed};
 }
 export function giantCircleLine(c,camera,width,height,tolerance=.25){
- const tangent=localCircleTangent(c,camera,width,height);
- if(!tangent||!Number.isFinite(tangent.signed))return {type:'none'};
- const {nx,ny,signed}=tangent;
- const extent=Math.abs(nx)*width/2+Math.abs(ny)*height/2;
- const centerX=width/2,centerY=height/2;
- const lineDistance=-signed;
- if(Math.abs(lineDistance)>extent+tolerance)return {type:'none'};
- const qx=centerX+lineDistance*nx,qy=centerY+lineDistance*ny;
- const tx=-ny,ty=nx,halfLength=Math.hypot(width,height)+tolerance;
- return {type:'line',x1:qx-tx*halfLength,y1:qy-ty*halfLength,x2:qx+tx*halfLength,y2:qy+ty*halfLength};
+ const {dx,dy,f}=localCircleEquation(c,camera,width,height);
+ // In viewport-local pixel coordinates the exact linear equation is
+ // a*x + b*y + f = 0. Its coefficients and edge intersections stay rational;
+ // no huge screen-space center, radius, square root, or subtraction is used.
+ const a=mul(dx,pixelToWorld(2,camera.scale)),b=mul(dy,pixelToWorld(-2,camera.scale));
+ const left=numberFraction(-width/2-tolerance),right=numberFraction(width/2+tolerance);
+ const top=numberFraction(-height/2-tolerance),bottom=numberFraction(height/2+tolerance);
+ const compare=(u,v)=>u.n*v.d-v.n*u.d;
+ const points=[];
+ function addPoint(x,y){
+  if(compare(x,left)<0n||compare(x,right)>0n||compare(y,top)<0n||compare(y,bottom)>0n)return;
+  if(points.some(p=>compare(p.x,x)===0n&&compare(p.y,y)===0n))return;
+  points.push({x,y});
+ }
+ if(b.n!==0n)for(const x of [left,right])addPoint(x,div(sub(fraction(0n),add(f,mul(a,x))),b));
+ if(a.n!==0n)for(const y of [top,bottom])addPoint(div(sub(fraction(0n),add(f,mul(b,y))),a),y);
+ if(points.length<2)return {type:'none'};
+ const screen=p=>({x:width/2+scaledRatioToNumber(p.x.n,p.x.d),y:height/2+scaledRatioToNumber(p.y.n,p.y.d)});
+ const start=screen(points[0]),end=screen(points[1]);
+ return {type:'line',x1:start.x,y1:start.y,x2:end.x,y2:end.y};
 }
 
 export function projectedBoundary(c,camera,width,height,tolerance=ARC_LINE_TOLERANCE_PX){
- const p=projectCircle(c,camera);
  // Use the exact implicit circle equation before cancellation can erase
  // the boundary location. Curvature becomes a line only below this error.
- if(!Number.isFinite(p.r)||p.r>=Math.hypot(width,height)**2/(8*tolerance))
+ if(circleLooksStraight(c,camera,width,height,tolerance))
   return giantCircleLine(c,camera,width,height,tolerance);
- return circleBoundaryPrimitive(p.x,p.y,p.r,width,height,tolerance);
+ const p=projectCircle(c,camera);
+ return circleBoundaryPrimitive(p.x,p.y,p.r,width,height);
 }
