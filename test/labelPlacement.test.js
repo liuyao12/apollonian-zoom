@@ -24,7 +24,7 @@ test('a fully visible circle keeps its center',()=>{
 test('a fully visible enclosing circle keeps its label outside the packing',()=>{
  const config=presets['(-1,2,2,3)'];
  const camera=cameraForCircle(config[0],200,200,{mantissa:150,exponent:0});
- const label=projectedLabelPlacement(config[0],camera,400,400,rects);
+ const label=projectedLabelPlacement(config[0],camera,400,400,rects,32);
  assert.ok(label);
  assert.ok(Math.hypot(label.x-200,label.y-200)-label.r>=150-1e-8);
 });
@@ -103,4 +103,21 @@ test('a diagonal off-screen outer center labels along the opposite ray',()=>{
  assert.ok(label);
  assert.ok(Math.abs((label.x-200)*300-(label.y-200)*500)<1e-5);
  assert.ok(Math.abs(Math.hypot(label.x-shape.x,label.y-shape.y)-650-label.r-8)<1e-6);
+});
+
+test('negative label size is constant for full, clipped, and straight boundaries',()=>{
+ const shapes=[
+  {type:'disk',x:200,y:200,r:100,outside:true},
+  {type:'disk',x:-300,y:200,r:500,outside:true},
+  {type:'halfPlane',nx:1,ny:0,offset:-200,outside:true}
+ ];
+ for(const shape of shapes){
+  const label=placeVisibleLabel(shape,rects);
+  assert.ok(label);assert.equal(label.r,48);
+ }
+});
+
+test('a narrow exterior never shrinks a negative label',()=>{
+ const label=placeVisibleLabel({type:'halfPlane',nx:1,ny:0,offset:-380,outside:true},rects);
+ assert.equal(label,null);
 });

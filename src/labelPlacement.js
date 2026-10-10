@@ -77,7 +77,7 @@ function exteriorLabel(shape,rect){
    const point={x:shape.x+dx/length*distance,y:shape.y+dy/length*distance};
    return fitsViewport(point,radius,rect)?point:null;
   };
-  const label=fitBoundaryLabel(candidate);
+  const label=fitBoundaryLabel(candidate,shape.labelRadius);
   if(label)return label;
  }
  return null;
@@ -87,14 +87,10 @@ function fitsViewport(point,radius,rect){
  return point.x-radius>=rect.left+8&&point.x+radius<=rect.right-8&&
   point.y-radius>=rect.top+8&&point.y+radius<=rect.bottom-8;
 }
-function fitBoundaryLabel(candidate){
- if(!candidate(0))return null;
- let low=0,high=80;
- for(let i=0;i<32;i++){
-  const mid=(low+high)/2;
-  if(candidate(mid))low=mid;else high=mid;
- }
- return low>10?{...candidate(low),r:low}:null;
+function fitBoundaryLabel(candidate,radius=48){
+ // Keep the full-scale label space fixed: navigation only moves the label.
+ const point=candidate(radius);
+ return point?{...point,r:radius}:null;
 }
 
 function exteriorLineLabel(shape,rect){
@@ -115,7 +111,7 @@ function exteriorLineLabel(shape,rect){
   return {x:points.reduce((sum,p)=>sum+p.x,0)/points.length,
    y:points.reduce((sum,p)=>sum+p.y,0)/points.length};
  };
- return fitBoundaryLabel(candidate);
+ return fitBoundaryLabel(candidate,shape.labelRadius);
 }
 
 export function placeVisibleLabel(shape,rects){

@@ -1,6 +1,6 @@
 import {circle,reflect} from './apollonianBigInt.js';
 import {ARC_LINE_TOLERANCE_PX,circleBoundaryPrimitive} from './circleRenderer.js';
-import {placeVisibleLabel} from './labelPlacement.js?v=exterior-boundary';
+import {placeVisibleLabel} from './labelPlacement.js?v=exterior-fixed-size';
 
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
 
@@ -427,10 +427,10 @@ export function projectedBoundary(c,camera,width,height,tolerance=ARC_LINE_TOLER
  return circleBoundaryPrimitive(p.x,p.y,p.r,width,height);
 }
 
-export function projectedLabelPlacement(c,camera,width,height,rects){
+export function projectedLabelPlacement(c,camera,width,height,rects,labelRadius=48){
  if(!circleLooksStraight(c,camera,width,height)){
   const p=projectCircle(c,camera);
-  return placeVisibleLabel({type:'disk',...p,outside:c.b<0n},rects);
+  return placeVisibleLabel({type:'disk',...p,outside:c.b<0n,labelRadius},rects);
  }
  const tangent=localCircleTangent(c,camera,width,height);
  if(!tangent||!Number.isFinite(tangent.signed)){
@@ -440,6 +440,6 @@ export function projectedLabelPlacement(c,camera,width,height,rects){
  }
  const direction=c.b<0n?1:-1;
  const nx=direction*tangent.nx,ny=direction*tangent.ny;
- return placeVisibleLabel({type:'halfPlane',nx,ny,outside:c.b<0n,
+ return placeVisibleLabel({type:'halfPlane',nx,ny,outside:c.b<0n,labelRadius,
   offset:direction*tangent.signed-nx*width/2-ny*height/2},rects);
 }

@@ -2,7 +2,7 @@ import {toFloat,generate} from './apollonianBigInt.js';
 import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,projectedBoundary,projectedLabelPlacement,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js?v=exterior-boundary';
+import {cameraForCircle,projectedBoundary,projectedLabelPlacement,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js?v=exterior-fixed-size';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 import {randomRootCurvatures} from './randomConfig.js';
 
@@ -302,8 +302,16 @@ function draw(){
   ctx.fillStyle=highlighted?residueColor:'rgba(0,0,0,.18)';
   ctx.lineWidth=filtering&&highlighted?2.5:1;
   strokeProjectedBoundary(e,c);
-  const label=projectedLabelPlacement(e,camera,canvas.width,canvas.height,labelRects);
-  if(label)drawFittedLabel(labelTerms(c.b),label.x,label.y,label.r);
+  const terms=labelTerms(c.b);
+  // Outer labels always use their full-scale layout. Size the placement box
+  // from that text, independently of the available exterior or camera zoom.
+  let exteriorRadius=48;
+  if(c.b<0n){
+   ctx.font='38.4px sans-serif';
+   exteriorRadius=Math.min(80,Math.max(32,Math.hypot(ctx.measureText(terms.join(' · ')).width,44)/2));
+  }
+  const label=projectedLabelPlacement(e,camera,canvas.width,canvas.height,labelRects,exteriorRadius);
+  if(label)drawFittedLabel(terms,label.x,label.y,c.b<0n?80:label.r);
  }
  ctx.lineWidth=1;
  if(selectedCircle){ctx.save();ctx.strokeStyle='#111';ctx.lineWidth=3;strokeProjectedBoundary(selectedCircle);ctx.restore();}
