@@ -1,4 +1,5 @@
 import {circle,reflect} from './apollonianBigInt.js';
+import {ARC_LINE_TOLERANCE_PX,circleBoundaryPrimitive} from './circleRenderer.js';
 
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
 
@@ -28,10 +29,11 @@ export function scaledRatioToNumber(n,d,power=0){
  const nBits=bitLength(n),dBits=bitLength(d);
  const nShift=Math.max(0,nBits-54),dShift=Math.max(0,dBits-54);
  const leading=Number(n>>BigInt(nShift))/Number(d>>BigInt(dShift));
- const exponent=power+nShift-dShift;
+ const adjustment=Math.floor(Math.log2(leading));
+ const exponent=power+nShift-dShift+adjustment;
  if(exponent>1024)return sign*Infinity;
  if(exponent<-1075)return sign*0;
- return sign*leading*2**exponent;
+ return sign*(leading/2**adjustment)*2**exponent;
 }
 
 function normalizeScale(scale){
@@ -67,6 +69,46 @@ function pointForCircle(c){return {x:centerFraction(c,'x'),y:centerFraction(c,'y
 export function cameraForCircle(c,screenX,screenY,scale){
  const point=pointForCircle(c);
  return {anchorX:point.x,anchorY:point.y,screenX,screenY,scale:{...scale}};
+}
+
+// Decode the actual binary value of an input coordinate, not its decimal
+// spelling. Only pixel coordinates and the scale mantissa use doubles.
+function numberFraction(value){
+ if(!Number.isFinite(value))throw new Error('Invalid screen coordinate');
+ if(value===0)return fraction(0n);
+ const buffer=new DataView(new ArrayBuffer(8));buffer.setFloat64(0,value);
+ const bits=buffer.getBigUint64(0),field=Number((bits>>52n)&2047n);
+ let n=bits&((1n<<52n)-1n);
+ if(field)n|=1n<<52n;
+ if(bits>>63n)n=-n;
+ const power=field?field-1075:-1074;
+ return power>=0?fraction(n<<BigInt(power)):fraction(n,1n<<BigInt(-power));
+}
+function pixelToWorld(value,scale){
+ const p=numberFraction(value),m=numberFraction(scale.mantissa);
+ return scale.exponent>=0?fraction(p.n*m.d,p.d*m.n*(1n<<BigInt(scale.exponent))):
+  fraction(p.n*m.d*(1n<<BigInt(-scale.exponent)),p.d*m.n);
+}
+export function worldPointAt(camera,x,y){
+ return {x:add(camera.anchorX,pixelToWorld(x-camera.screenX,camera.scale)),
+  y:sub(camera.anchorY,pixelToWorld(y-camera.screenY,camera.scale))};
+}
+function reducedAnchor(a){
+ let n=abs(a.n),d=a.d;
+ while(d){const r=n%d;n=d;d=r;}
+ return fraction(a.n/n,a.d/n);
+}
+export function zoomCameraAt(camera,oldX,oldY,newX,newY,factor){
+ if(!Number.isFinite(factor)||factor<=0)return false;
+ const point=worldPointAt(camera,oldX,oldY);
+ const scale=multiplyScale({...camera.scale},factor);
+ // Keep the pivot exactly, including its fractional screen offset. Rounding
+ // even at 64 guard bits would become visible after another 20 zoom orders.
+ // A stationary pivot reuses its rational; only a moving pivot needs a GCD.
+ camera.anchorX=oldX===camera.screenX?camera.anchorX:reducedAnchor(point.x);
+ camera.anchorY=oldY===camera.screenY?camera.anchorY:reducedAnchor(point.y);
+ camera.screenX=newX;camera.screenY=newY;camera.scale=scale;
+ return true;
 }
 
 function projectCoordinate(value,anchor,screen,scale,flip=false){
@@ -163,7 +205,8 @@ function circleBounds(c,camera){return projectedBounds(circleCardinalPoints(c),c
 function circleKey(c){return `${c.b},${c.bx.n}/${c.bx.d},${c.by.n}/${c.by.d}`;}
 function circleBoundaryIntersects(c,camera,width,height,margin=0){
  const p=projectCircle(c,camera);
- if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.r)||p.r>1e9){
+ if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.r)||
+  p.r>=Math.hypot(width,height)**2/(8*ARC_LINE_TOLERANCE_PX)){
   return giantCircleLine(c,camera,width,height,margin).type!=='none';
  }
  const left=-margin,right=width+margin,top=-margin,bottom=height+margin;
@@ -191,14 +234,23 @@ function pointInsideExpandedViewport(point,camera,width,height,margin){
 function valleyCornersClear(config,replaced,camera,width,height,margin){
  return valleyCorners(config,replaced).every(point=>!pointInsideExpandedViewport(point,camera,width,height,margin));
 }
+function valleyContainsViewport(config,replaced,camera,width,height,margin){
+ const point=worldPointAt(camera,width/2,height/2);
+ for(let i=0;i<4;i++)if(i!==replaced){
+  const c=config[i],center=pointForCircle(c);
+  const difference=sub(add(square(sub(point.x,center.x)),square(sub(point.y,center.y))),square(radiusFraction(c)));
+  if(c.b>0n?difference.n<=0n:difference.n>=0n)return false;
+  if(circleBoundaryIntersects(c,camera,width,height,margin))return false;
+ }
+ return true;
+}
 
 export function traversalStage(config,blockedIndex=null,parent=null,bridgeCircles=[]){
  return {config,blockedIndex,parent,bridgeCircles};
 }
 
 export function stageNeedsParent(stage,camera,width,height,margin=Math.hypot(width,height)*.5){
- return stage.blockedIndex!==null&&
-  valleyCorners(stage.config,stage.blockedIndex).some(point=>pointInsideExpandedViewport(point,camera,width,height,margin));
+ return stage.blockedIndex!==null&&!valleyContainsViewport(stage.config,stage.blockedIndex,camera,width,height,margin);
 }
 
 // This traversal is intentionally stateless. Deep branches from old frames are
@@ -208,11 +260,14 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
  let nextStage=null,nextStageDepth=0,nextStageDistance=Infinity;
  const stageStepDepth=18,stageMargin=Math.hypot(width,height);
  function radiusPixels(c){return camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);}
- function addCircle(c){
+ function addCircle(c,configuration=null){
   if(radiusPixels(c)<minRadiusPx||!circleBoundaryIntersects(c,camera,width,height,minRadiusPx))return;
   const key=circleKey(c);
   if(!seen.has(key)){
-   const record=circle(c);seen.add(key);records.set(key,record);result.push(record);
+   const record=circle(c);record.configuration=configuration;
+   seen.add(key);records.set(key,record);result.push(record);
+  }else if(configuration&&!records.get(key).configuration){
+   records.get(key).configuration=configuration;
   }
  }
  function registerTangencies(q){
@@ -224,8 +279,8 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
    touching.get(a).set(b,q[j].b);touching.get(b).set(a,q[i].b);
   }
  }
- bridgeCircles.forEach(addCircle);
- config.forEach(addCircle);registerTangencies(config);
+ bridgeCircles.forEach(c=>addCircle(c));
+ config.forEach(c=>addCircle(c,config));registerTangencies(config);
  for(let i=0;i<4;i++)if(i!==blockedIndex)stack.push({
   config:reflect(config,i),replaced:i,depth:1,safeStage:null,parentNode:null
  });
@@ -237,10 +292,11 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
   let safeStage=node.safeStage;
   if(node.depth>=stageStepDepth&&bounds.left<=width/2&&bounds.right>=width/2&&
    bounds.top<=height/2&&bounds.bottom>=height/2&&
-   valleyCornersClear(node.config,node.replaced,camera,width,height,stageMargin)){
+   valleyCornersClear(node.config,node.replaced,camera,width,height,stageMargin)&&
+   valleyContainsViewport(node.config,node.replaced,camera,width,height,stageMargin)){
    safeStage={config:node.config,blockedIndex:node.replaced,depth:node.depth,pathNode:node};
   }
-  addCircle(candidate);registerTangencies(node.config);
+  addCircle(candidate,node.config);registerTangencies(node.config);
   if(safeStage&&candidate.b>0n){
    const p=projectCircle(candidate,camera);
    if(Number.isFinite(p.x)&&Number.isFinite(p.y)&&Number.isFinite(p.r)&&p.r>=minRadiusPx){
@@ -271,7 +327,8 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
 // Compute a visually indistinguishable tangent line without ever constructing
 // the enormous screen-space center or radius of an ancestor circle.
 export function giantCircleLine(c,camera,width,height,tolerance=.25){
- const center=pointForCircle(c),dx=sub(camera.anchorX,center.x),dy=sub(camera.anchorY,center.y),r=radiusFraction(c);
+ const anchor=worldPointAt(camera,width/2,height/2);
+ const center=pointForCircle(c),dx=sub(anchor.x,center.x),dy=sub(anchor.y,center.y),r=radiusFraction(c);
  const exponent=Math.max(binaryExponent(dx),binaryExponent(dy),binaryExponent(r));
  const dxn=scaledRatioToNumber(dx.n,dx.d,-exponent),dyn=scaledRatioToNumber(dy.n,dy.d,-exponent);
  const distance=Math.hypot(dxn,dyn),rn=scaledRatioToNumber(r.n,r.d,-exponent);
@@ -282,10 +339,18 @@ export function giantCircleLine(c,camera,width,height,tolerance=.25){
  const nx=dxn/distance,ny=-dyn/distance;
  const extent=Math.abs(nx)*width/2+Math.abs(ny)*height/2;
  const centerX=width/2,centerY=height/2;
- const anchorDistance=(camera.screenX-centerX)*nx+(camera.screenY-centerY)*ny;
- const lineDistance=anchorDistance-signed;
+ const lineDistance=-signed;
  if(Math.abs(lineDistance)>extent+tolerance)return {type:'none'};
  const qx=centerX+lineDistance*nx,qy=centerY+lineDistance*ny;
  const tx=-ny,ty=nx,halfLength=Math.hypot(width,height)+tolerance;
  return {type:'line',x1:qx-tx*halfLength,y1:qy-ty*halfLength,x2:qx+tx*halfLength,y2:qy+ty*halfLength};
+}
+
+export function projectedBoundary(c,camera,width,height,tolerance=ARC_LINE_TOLERANCE_PX){
+ const p=projectCircle(c,camera);
+ // Use the exact implicit circle equation before cancellation can erase
+ // the boundary location. Curvature becomes a line only below this error.
+ if(!Number.isFinite(p.r)||p.r>=Math.hypot(width,height)**2/(8*tolerance))
+  return giantCircleLine(c,camera,width,height,tolerance);
+ return circleBoundaryPrimitive(p.x,p.y,p.r,width,height,tolerance);
 }

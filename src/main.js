@@ -1,8 +1,8 @@
 import {toFloat,generate} from './apollonianBigInt.js';
-import {circleBoundaryPrimitive} from './circleRenderer.js';
+import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,giantCircleLine,multiplyScale,projectCircle,reanchorCamera,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected} from './exactViewport.js';
+import {cameraForCircle,projectedBoundary,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 import {randomRootCurvatures} from './randomConfig.js';
 
@@ -17,6 +17,9 @@ const customInput=document.getElementById('custom-curvatures');
 const customCancel=document.getElementById('custom-cancel');
 const customError=document.getElementById('custom-error');
 const residueButtons=document.getElementById('residue-buttons');
+const inspector=document.getElementById('inspector'),exactValue=document.getElementById('exact-value');
+const zoomStatus=document.getElementById('zoom-status');
+let selectedCircle=null,homeScaleLog=0,pointerStart=null;
 const MIN_CIRCLE_RADIUS_PX=2;
 const PRIME_GLOW_MIN_RADIUS_PX=5;
 const RESIDUE_PALETTE=['#1565c0','#d35400','#14805e','#b13b72','#6f42c1','#8c564b','#00838f','#c62828'];
@@ -156,30 +159,23 @@ function update(){
   viewStage.blockedIndex,viewStage.bridgeCircles,factorLabels);
  if(circles.nextStage)viewStage=traversalStage(circles.nextStage.config,circles.nextStage.blockedIndex,viewStage,
   circles.nextStage.bridgeCircles);
- const centerX=canvas.width/2,centerY=canvas.height/2;
- const viewportDiagonal=Math.hypot(canvas.width,canvas.height);
- const anchorDistance=Math.hypot(camera.screenX-centerX,camera.screenY-centerY);
- // Move the exact floating origin in viewport-sized stages. The separate
- // enter and improvement thresholds provide hysteresis, so normal panning
- // near a boundary cannot make the anchor oscillate between two circles.
- if(homeFrame===null&&(!Number.isFinite(anchorDistance)||anchorDistance>2*viewportDiagonal)){
-  let best=null,bestDistance=Infinity;
-  for(const circle of circles){
-   if(circle.b<=0n)continue;
-   const p=projectCircle(circle,camera),distance=Math.hypot(p.x-centerX,p.y-centerY);
-   if(Number.isFinite(distance)&&distance<bestDistance){best={circle,p};bestDistance=distance;}
-  }
-  if(best&&bestDistance<Math.max(viewportDiagonal,anchorDistance/2))reanchorCamera(camera,best.circle,best.p);
- }
 }
 function fitOuter(){
  const outer=currentConfig.find(c=>c.b<0n)||currentConfig[0];
  const fit=fitOuterFor(currentConfig,canvas.width,canvas.height);
  camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,scaleFromNumber(fit.zoom));
+ homeScaleLog=scaleLog(camera.scale);
 }
 function cancelHomeAnimation(){if(homeFrame!==null){cancelAnimationFrame(homeFrame);homeFrame=null;}}
-function rebuild(){cancelHomeAnimation();viewStage=traversalStage(currentConfig);fitOuter();update();draw();}
-function resize(){const rect=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(rect.width));canvas.height=Math.max(1,Math.round(rect.height));rebuild();}
+function rebuild(){cancelHomeAnimation();selectedCircle=null;inspector.hidden=true;viewStage=traversalStage(currentConfig);fitOuter();update();draw();}
+function resize(){
+ const oldWidth=canvas.width,oldHeight=canvas.height,rect=canvas.getBoundingClientRect();
+ canvas.width=Math.max(1,Math.round(rect.width));canvas.height=Math.max(1,Math.round(rect.height));
+ if(!camera){rebuild();return;}
+ camera.screenX+=(canvas.width-oldWidth)/2;camera.screenY+=(canvas.height-oldHeight)/2;
+ homeScaleLog=scaleLog(scaleFromNumber(fitOuterFor(currentConfig,canvas.width,canvas.height).zoom));
+ update();draw();
+}
 addEventListener('resize',resize);
 
 function labelTerms(value){
@@ -231,6 +227,17 @@ function layoutAtSize(terms,fontSize,r){
 }
 
 function drawFittedLabel(terms,x,y,r){
+ // Long integers keep every digit. Break into digit rows instead of
+ // shrinking a hundreds-digit integer into an unreadable one-pixel label.
+ if(!factorLabels&&terms[0].length>14){
+  const digits=terms[0],columns=Math.ceil(Math.sqrt(digits.length*1.8));
+  terms=digits.match(new RegExp(`.{1,${columns}}`,'g'));
+  const fontSize=Math.min(18,r*1.2/Math.max(columns*.62,terms.length*1.15));
+  if(fontSize<7)return;
+  ctx.font=fontSize+'px monospace';
+  terms.forEach((row,i)=>ctx.fillText(row,x,y+(i-(terms.length-1)/2)*fontSize*1.15));
+  return;
+ }
  let low=.5,high=Math.min(40,r*.48),layout=null;
  for(let i=0;i<12;i++){
   const size=(low+high)/2,candidate=layoutAtSize(terms,size,r);
@@ -254,23 +261,13 @@ function drawFittedLabel(terms,x,y,r){
  });
 }
 
-function drawCircleBoundary(x,y,r){
- const boundary=circleBoundaryPrimitive(x,y,r,canvas.width,canvas.height);
+function strokeProjectedBoundary(e){
+ const boundary=projectedBoundary(e,camera,canvas.width,canvas.height);
  if(boundary.type==='none')return false;
  ctx.beginPath();
  if(boundary.type==='arc')ctx.arc(boundary.x,boundary.y,boundary.r,0,2*Math.PI);
  else{ctx.moveTo(boundary.x1,boundary.y1);ctx.lineTo(boundary.x2,boundary.y2);}
  ctx.stroke();return true;
-}
-
-function strokeProjectedBoundary(e,c){
- const {x,y,r}=c;
- if(!Number.isFinite(r)||r>1e9){
-  const boundary=giantCircleLine(e,camera,canvas.width,canvas.height);
-  if(boundary.type==='none')return false;
-  ctx.beginPath();ctx.moveTo(boundary.x1,boundary.y1);ctx.lineTo(boundary.x2,boundary.y2);ctx.stroke();return true;
- }
- return Number.isFinite(x)&&Number.isFinite(y)?drawCircleBoundary(x,y,r):false;
 }
 
 function draw(){
@@ -300,14 +297,14 @@ function draw(){
   else if(c.b>0n&&r>10&&x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height)drawFittedLabel(labelTerms(c.b),x,y,r);
  }
  ctx.lineWidth=1;
+ if(selectedCircle){ctx.save();ctx.strokeStyle='#111';ctx.lineWidth=3;strokeProjectedBoundary(selectedCircle);ctx.restore();}
+ const digits=Math.max(0,...circles.filter(c=>c.b>0n).map(c=>c.b.toString().length));
+ const orders=Math.max(0,Math.floor((scaleLog(camera.scale)-homeScaleLog)/Math.LN10));
+ zoomStatus.textContent=`${orders} zoom orders · ${digits}-digit curvatures`;
 }
 
 function zoomAt(oldX,oldY,newX,newY,factor){
- if(!Number.isFinite(factor)||factor<=0)return false;
- camera.screenX=newX+(camera.screenX-oldX)*factor;
- camera.screenY=newY+(camera.screenY-oldY)*factor;
- camera.scale=multiplyScale(camera.scale,factor);
- return true;
+ return zoomCameraAt(camera,oldX,oldY,newX,newY,factor);
 }
 
 function animateHome(){
@@ -321,8 +318,8 @@ function animateHome(){
  const zoomDistance=Math.abs(logEnd-logStart);
  // Match a steady, ordinary mouse-wheel pace (about six 100-unit notches per
  // second) using the same sensitivity as manual zooming.
- const zoomDuration=zoomDistance<1e-9?0:Math.max(HOME_MIN_DURATION_MS,
-  zoomDistance/(WHEEL_ZOOM_SENSITIVITY*HOME_WHEEL_DELTA_PER_SECOND)*1000);
+ const zoomDuration=zoomDistance<1e-9?0:Math.min(1400,Math.max(HOME_MIN_DURATION_MS,
+  zoomDistance/(WHEEL_ZOOM_SENSITIVITY*HOME_WHEEL_DELTA_PER_SECOND)*1000));
  const panDuration=HOME_RECENTER_DURATION_MS;
  const duration=zoomDuration+panDuration;
  let panStart=null;
@@ -353,6 +350,71 @@ function animateHome(){
 
 homeButton.addEventListener('click',animateHome);
 
+function inspectCircle(c){
+ selectedCircle=c;inspector.hidden=false;
+ const values=exactCircleValues(c);
+ function texFraction(value){return value.d===1n?value.n.toString():`\\frac{${value.n}}{${value.d}}`;}
+ const fields=[['Curvature',values.curvature.toString()],['Center, horizontal',texFraction(values.x)],
+  ['Center, vertical',texFraction(values.y)],['Radius',texFraction(values.radius)]];
+ exactValue.replaceChildren();
+ for(const [label,tex] of fields){
+  const row=document.createElement('div'),title=document.createElement('div'),math=document.createElement('div');
+  title.className='value-title';title.textContent=label;math.className='exact-math';
+  katex.render(tex,math,{throwOnError:false,output:'htmlAndMathml'});
+  row.append(title,math);exactValue.append(row);
+ }
+ document.getElementById('inspector-title').textContent=`Exact circle · ${(c.b<0n?-c.b:c.b).toString().length} digits`;
+ draw();
+}
+function circleAt(x,y){
+ let selected=null,smallest=Infinity;
+ for(const c of circles){
+  const p=projectCircle(c,camera);
+  if(c.b>0n&&Number.isFinite(p.r)&&p.r<smallest&&Math.hypot(p.x-x,p.y-y)<=p.r){selected=c;smallest=p.r;}
+ }
+ if(selected)return selected;
+ let distance=8;
+ for(const c of circles){
+  const boundary=projectedBoundary(c,camera,canvas.width,canvas.height);
+  if(boundary.type!=='line')continue;
+  const dx=boundary.x2-boundary.x1,dy=boundary.y2-boundary.y1;
+  const d=Math.abs(dx*(boundary.y1-y)-(boundary.x1-x)*dy)/Math.hypot(dx,dy);
+  if(d<distance){selected=c;distance=d;}
+ }
+ return selected;
+}
+document.getElementById('inspector-close').onclick=()=>{selectedCircle=null;inspector.hidden=true;draw();};
+document.getElementById('copy-value').onclick=async()=>{
+ if(!selectedCircle)return;
+ const values=exactCircleValues(selectedCircle),f=v=>v.d===1n?String(v.n):`${v.n}/${v.d}`;
+ const text=`Curvature: ${values.curvature}\nCenter: (${f(values.x)}, ${f(values.y)})\nRadius: ${f(values.radius)}`;
+ const button=document.getElementById('copy-value');
+ try{await navigator.clipboard.writeText(text);button.textContent='Copied';}
+ catch{button.textContent='Select and copy values above';}
+ setTimeout(()=>button.textContent='Copy exact values',1800);
+};
+document.getElementById('dive-button').onclick=()=>{
+ cancelHomeAnimation();
+ const candidates=circles.filter(c=>c.b>0n&&c.configuration);
+ const chosen=candidates.reduce((best,c)=>{
+  const p=projectCircle(c,camera),distance=Math.hypot(p.x-canvas.width/2,p.y-canvas.height/2);
+  return !best||distance<best.distance?{c,distance}:best;
+ },null);
+ if(!chosen)return;
+ const {target}=descendConfiguration(chosen.c.configuration);
+ camera=cameraForCircle(target,canvas.width/2,canvas.height/2,scaleFromBigInt(target.b,Math.min(150,Math.min(canvas.width,canvas.height)*.24)));
+ update();inspectCircle(target);
+};
+for(const [id,factor] of [['zoom-in',2],['zoom-out',.5]])document.getElementById(id).onclick=()=>{
+ cancelHomeAnimation();zoomAt(canvas.width/2,canvas.height/2,canvas.width/2,canvas.height/2,factor);update();draw();
+};
+canvas.addEventListener('dblclick',e=>{
+ const rect=canvas.getBoundingClientRect(),c=circleAt(e.clientX-rect.left,e.clientY-rect.top);
+ if(!c||c.b<=0n)return;
+ cancelHomeAnimation();camera=cameraForCircle(c,canvas.width/2,canvas.height/2,
+  scaleFromBigInt(c.b,Math.min(canvas.width,canvas.height)*.3));update();inspectCircle(c);
+});
+
 function setCustomForm(open){
  customButton.setAttribute('aria-expanded',String(open));customForm.hidden=!open;
  if(open){customError.textContent='';customInput.focus();}
@@ -378,7 +440,8 @@ customForm.addEventListener('submit',e=>{
 canvas.addEventListener('wheel',e=>{
  e.preventDefault();cancelHomeAnimation();const rect=canvas.getBoundingClientRect();
  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
- if(zoomAt(mx,my,mx,my,Math.exp(-e.deltaY*WHEEL_ZOOM_SENSITIVITY))){update();draw();}
+ const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?canvas.height:1);
+ if(zoomAt(mx,my,mx,my,Math.exp(-Math.max(-1000,Math.min(1000,delta))*WHEEL_ZOOM_SENSITIVITY))){update();draw();}
 },{passive:false});
 
 function currentGesture(){
@@ -393,15 +456,19 @@ canvas.addEventListener('pointerdown',e=>{
  if(e.pointerType==='mouse'&&e.button!==0)return;
  e.preventDefault();cancelHomeAnimation();canvas.setPointerCapture(e.pointerId);
  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});gesture=currentGesture();
+ if(pointers.size===1)pointerStart={x:e.clientX,y:e.clientY,moved:false};
+ else if(pointerStart)pointerStart.moved=true;
  canvas.classList.add('interacting');
 });
 
 canvas.addEventListener('pointermove',e=>{
  if(!pointers.has(e.pointerId))return;
+ if(pointerStart&&Math.hypot(e.clientX-pointerStart.x,e.clientY-pointerStart.y)>5)pointerStart.moved=true;
  e.preventDefault();pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
  const next=currentGesture();let changed=false;
  if(gesture?.type==='pan'&&next?.type==='pan'){
-  camera.screenX+=next.x-gesture.x;camera.screenY+=next.y-gesture.y;changed=true;
+  const rect=canvas.getBoundingClientRect();
+  changed=zoomAt(gesture.x-rect.left,gesture.y-rect.top,next.x-rect.left,next.y-rect.top,1);
  }else if(gesture?.type==='pinch'&&next?.type==='pinch'){
   const rect=canvas.getBoundingClientRect();
   changed=zoomAt(gesture.x-rect.left,gesture.y-rect.top,next.x-rect.left,next.y-rect.top,next.distance/gesture.distance);
@@ -410,9 +477,12 @@ canvas.addEventListener('pointermove',e=>{
 });
 
 function endPointer(e){
+ const inspect=e.type==='pointerup'&&pointers.size===1&&pointerStart&&!pointerStart.moved;
  if(!pointers.delete(e.pointerId))return;
  if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);
  gesture=currentGesture();if(pointers.size===0)canvas.classList.remove('interacting');
+ if(inspect){const rect=canvas.getBoundingClientRect(),c=circleAt(e.clientX-rect.left,e.clientY-rect.top);if(c)inspectCircle(c);}
+ if(pointers.size===0)pointerStart=null;
 }
 canvas.addEventListener('pointerup',endPointer);
 canvas.addEventListener('pointercancel',endPointer);

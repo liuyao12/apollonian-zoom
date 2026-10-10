@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Apollonian Zoom</title>
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
 <style>
 :root{--sidebar-width:clamp(142px,24vw,170px)}
 *{box-sizing:border-box}
@@ -52,16 +53,33 @@ canvas{display:block;background:white}
 .residue-button[aria-pressed="true"]{background:var(--residue-color);border-color:var(--residue-color);color:#fff;font-weight:700;box-shadow:0 0 0 2px #c7d4e3}
 .residue-button:disabled{background:#e7e7e7;border-color:#d1d1d1;color:#aaa;cursor:not-allowed}
 .residue-button:focus-visible{outline:2px solid #2673d9;outline-offset:1px}
+#zoom-tools{position:fixed;z-index:9;left:calc(var(--sidebar-width) + 12px);top:max(12px,env(safe-area-inset-top));display:flex;gap:5px}
+#zoom-tools button,#copy-value{min-height:40px;border:1px solid #bbb;border-radius:6px;background:#fff;color:#222;padding:0 12px;font:600 12px sans-serif;cursor:pointer;touch-action:manipulation}
+#zoom-tools button:hover,#copy-value:hover{background:#f2f4f6}
+#zoom-tools #dive-button{background:#172d46;color:#fff;border-color:#172d46}
+#zoom-status{position:fixed;z-index:8;left:calc(var(--sidebar-width) + 12px);bottom:14px;max-width:calc(100% - var(--sidebar-width) - 24px);padding:7px 10px;background:#fffffff0;border:1px solid #ddd;border-radius:6px;color:#444;font-size:11px;pointer-events:none}
+#inspector{position:fixed;z-index:12;right:12px;top:70px;width:min(360px,calc(100% - var(--sidebar-width) - 24px));max-height:calc(100% - 250px);overflow:auto;padding:14px;background:#fff;border:1px solid #bbb;border-radius:9px;box-shadow:0 3px 20px #0002}
+.inspector-header{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;font-weight:700}
+#inspector-close{border:0;background:#fff;min-width:32px;min-height:32px;font-size:22px;cursor:pointer}
+.value-title{font-size:11px;color:#555;margin:12px 0 5px}
+.exact-math{overflow-x:auto;padding:5px 0 9px;font-size:14px;user-select:text}
+#copy-value{width:100%;margin-top:10px}
+.explore-help{font-size:11px;color:#555;line-height:1.4;margin-bottom:10px}
 @media(max-width:600px){
  #residue-panel{z-index:11;left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));padding:8px}
  #residue-buttons{grid-template-columns:repeat(8,minmax(0,1fr));gap:3px}
  .residue-button{width:100%;height:40px}
+ #zoom-tools{left:calc(var(--sidebar-width) + 8px);top:62px;gap:3px}
+ #zoom-tools button{padding:0 8px;min-height:38px}
+ #zoom-status{bottom:200px;left:calc(var(--sidebar-width) + 8px);font-size:10px;padding:5px}
+ #inspector{right:8px;top:110px;width:calc(100% - var(--sidebar-width) - 16px);max-height:calc(100% - 290px);padding:9px}
 }
 </style>
 </head>
 <body>
 <div id="sidebar">
 <div class="app-title">Apollonian Circle Packings</div>
+<div class="explore-help">Scroll or pinch to zoom. Drag to pan. Click a circle for exact values; double-click to focus. Dive deeper explores a smaller gap.</div>
 <label class="factor-control">
 <span>Prime factors</span>
 <span class="switch"><input id="factor-toggle" type="checkbox" role="switch"><span class="slider" aria-hidden="true"></span></span>
@@ -78,12 +96,24 @@ canvas{display:block;background:white}
 <div class="credit">A direct recreation of <a href="https://observablehq.com/@mcmcclur/integer-apollonian-packings" target="_blank" rel="noopener noreferrer">Mark McClure’s Observable notebook</a>, developed with Codex powered by GPT-5.6.</div>
 </div>
 <canvas id="canvas"></canvas>
+<div id="zoom-tools" aria-label="Zoom controls">
+<button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+<button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+<button id="dive-button" type="button">Dive deeper</button>
+</div>
+<div id="zoom-status" role="status"></div>
+<aside id="inspector" aria-label="Exact circle values" hidden>
+<div class="inspector-header"><span id="inspector-title">Exact circle</span><button id="inspector-close" type="button" aria-label="Close exact values">×</button></div>
+<div id="exact-value"></div>
+<button id="copy-value" type="button">Copy exact values</button>
+</aside>
 <button id="home-button" type="button" aria-label="Return to home view" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3.8l8.5 6.7M5.8 9.2v10.5h12.4V9.2M9.5 19.7v-6.2h5v6.2"/></svg></button>
 <section id="residue-panel" aria-label="Curvature residue classes modulo 24">
 <div class="residue-title">Local–global mod 24</div>
 <div class="residue-help">Rows mod 3 · columns mod 8</div>
 <div id="residue-buttons"></div>
 </section>
+<script src="vendor/katex/katex.min.js"></script>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>
