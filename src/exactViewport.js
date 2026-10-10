@@ -1,6 +1,6 @@
 import {circle,reflect} from './apollonianBigInt.js';
 import {ARC_LINE_TOLERANCE_PX,circleBoundaryPrimitive} from './circleRenderer.js';
-import {placeVisibleLabel} from './labelPlacement.js?v=exterior-opposite';
+import {placeVisibleLabel} from './labelPlacement.js?v=exterior-boundary';
 
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
 
@@ -440,6 +440,6 @@ export function projectedLabelPlacement(c,camera,width,height,rects){
  }
  const direction=c.b<0n?1:-1;
  const nx=direction*tangent.nx,ny=direction*tangent.ny;
- return placeVisibleLabel({type:'halfPlane',nx,ny,
+ return placeVisibleLabel({type:'halfPlane',nx,ny,outside:c.b<0n,
   offset:direction*tangent.signed-nx*width/2-ny*height/2},rects);
 }

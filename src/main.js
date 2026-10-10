@@ -2,7 +2,7 @@ import {toFloat,generate} from './apollonianBigInt.js';
 import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,projectedBoundary,projectedLabelPlacement,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js?v=exterior-opposite';
+import {cameraForCircle,projectedBoundary,projectedLabelPlacement,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js?v=exterior-boundary';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 import {randomRootCurvatures} from './randomConfig.js';
 

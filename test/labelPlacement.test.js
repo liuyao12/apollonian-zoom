@@ -80,7 +80,8 @@ test('an overflowing negative circle labels the exterior side of its line',()=>{
  const camera=cameraForCircle(outer,500,350,scaleFromBigInt(1n<<2000n));
  camera.anchorX={n:1n,d:1n};camera.anchorY={n:0n,d:1n};
  const label=projectedLabelPlacement(outer,camera,1000,700,viewport(1000,700));
- assert.ok(label);assert.equal(label.x,750);assert.equal(label.y,350);
+ assert.ok(label);assert.equal(label.y,350);
+ assert.ok(Math.abs(label.x-500-label.r-8)<1e-6);
  assert.ok(label.x-label.r>=500-1e-8);
 });
 
@@ -93,7 +94,7 @@ for(const [name,x,y,axis] of [
  assert.ok(label);
  assert.equal(label[axis==='x'?'y':'x'],200);
  assert.ok((label[axis]-200)*(200-shape[axis])>0);
- assert.ok(Math.hypot(label.x-x,label.y-y)-label.r>=500-1e-8);
+ assert.ok(Math.abs(Math.hypot(label.x-x,label.y-y)-500-label.r-8)<1e-6);
 });
 
 test('a diagonal off-screen outer center labels along the opposite ray',()=>{
@@ -101,5 +102,5 @@ test('a diagonal off-screen outer center labels along the opposite ray',()=>{
  const label=placeVisibleLabel(shape,rects);
  assert.ok(label);
  assert.ok(Math.abs((label.x-200)*300-(label.y-200)*500)<1e-5);
- assert.ok(Math.hypot(label.x-shape.x,label.y-shape.y)-label.r>=650-1e-8);
+ assert.ok(Math.abs(Math.hypot(label.x-shape.x,label.y-shape.y)-650-label.r-8)<1e-6);
 });

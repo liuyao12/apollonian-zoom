@@ -60,41 +60,68 @@ function halfPlaneCentroid(shape,rect){
  return area?{x:mx/(3*area),y:my/(3*area)}:null;
 }
 
-// Label an off-screen enclosing circle along the ray pointing away from its
-// center. Use an exterior corner if that ray misses the visible exterior.
+// Negative labels hug the boundary on the side pointing away from the center.
 function exteriorLabel(shape,rect){
  const middle={x:(rect.left+rect.right)/2,y:(rect.top+rect.bottom)/2};
- const dx=middle.x-shape.x,dy=middle.y-shape.y;
- const centerOffscreen=shape.x<rect.left||shape.x>rect.right||shape.y<rect.top||shape.y>rect.bottom;
- const candidate=(radius,opposite)=>{
+ const offscreen=shape.x<rect.left||shape.x>rect.right||shape.y<rect.top||shape.y>rect.bottom;
+ const directions=[offscreen?middle:{x:shape.x+1,y:shape.y-1},
+  {x:rect.right,y:rect.top},{x:rect.left,y:rect.top},
+  {x:rect.right,y:rect.bottom},{x:rect.left,y:rect.bottom},
+  {x:middle.x,y:rect.top},{x:rect.right,y:middle.y},
+  {x:middle.x,y:rect.bottom},{x:rect.left,y:middle.y}];
+ for(const target of directions){
+  const dx=target.x-shape.x,dy=target.y-shape.y,length=Math.hypot(dx,dy);
+  if(!length)continue;
+  const candidate=radius=>{
+   const distance=shape.r+radius+8;
+   const point={x:shape.x+dx/length*distance,y:shape.y+dy/length*distance};
+   return fitsViewport(point,radius,rect)?point:null;
+  };
+  const label=fitBoundaryLabel(candidate);
+  if(label)return label;
+ }
+ return null;
+}
+
+function fitsViewport(point,radius,rect){
+ return point.x-radius>=rect.left+8&&point.x+radius<=rect.right-8&&
+  point.y-radius>=rect.top+8&&point.y+radius<=rect.bottom-8;
+}
+function fitBoundaryLabel(candidate){
+ if(!candidate(0))return null;
+ let low=0,high=80;
+ for(let i=0;i<32;i++){
+  const mid=(low+high)/2;
+  if(candidate(mid))low=mid;else high=mid;
+ }
+ return low>10?{...candidate(low),r:low}:null;
+}
+
+function exteriorLineLabel(shape,rect){
+ const candidate=radius=>{
   const left=rect.left+8+radius,right=rect.right-8-radius;
   const top=rect.top+8+radius,bottom=rect.bottom-8-radius;
   if(left>right||top>bottom)return null;
-  const distance=p=>Math.hypot(p.x-shape.x,p.y-shape.y);
-  if(opposite){
-   const t=Math.min(dx?((right-left)/2)/Math.abs(dx):Infinity,
-    dy?((bottom-top)/2)/Math.abs(dy):Infinity);
-   const point={x:middle.x+t*dx,y:middle.y+t*dy};
-   return distance(point)>=shape.r+radius?point:null;
+  const offset=shape.offset-radius-8,points=[];
+  if(shape.ny)for(const x of [left,right]){
+   const y=-(shape.nx*x+offset)/shape.ny;
+   if(y>=top&&y<=bottom)points.push({x,y});
   }
-  const corners=[{x:right,y:top},{x:left,y:top},{x:right,y:bottom},{x:left,y:bottom}];
-  const point=corners.reduce((best,p)=>distance(p)>distance(best)?p:best);
-  return distance(point)>=shape.r+radius?point:null;
+  if(shape.nx)for(const y of [top,bottom]){
+   const x=-(shape.ny*y+offset)/shape.nx;
+   if(x>=left&&x<=right)points.push({x,y});
+  }
+  if(!points.length)return null;
+  return {x:points.reduce((sum,p)=>sum+p.x,0)/points.length,
+   y:points.reduce((sum,p)=>sum+p.y,0)/points.length};
  };
- const opposite=centerOffscreen&&!!candidate(0,true);
- if(!candidate(0,opposite))return null;
- let low=0,high=Math.min(rect.right-rect.left,rect.bottom-rect.top)/2-8;
- for(let i=0;i<32;i++){
-  const mid=(low+high)/2;
-  if(candidate(mid,opposite))low=mid;else high=mid;
- }
- return low>10?{...candidate(low,opposite),r:low}:null;
+ return fitBoundaryLabel(candidate);
 }
 
 export function placeVisibleLabel(shape,rects){
  const rect=rects[0];
  if(!rect)return null;
- if(shape.type==='disk'&&shape.outside)return exteriorLabel(shape,rect);
+ if(shape.outside)return shape.type==='disk'?exteriorLabel(shape,rect):exteriorLineLabel(shape,rect);
  let point;
  if(shape.type==='disk'){
   if(shape.r<=10)return null;
