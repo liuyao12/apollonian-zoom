@@ -227,15 +227,23 @@ function layoutAtSize(terms,fontSize,r){
 }
 
 function drawFittedLabel(terms,x,y,r){
- // Long integers keep every digit. Break into digit rows instead of
- // shrinking a hundreds-digit integer into an unreadable one-pixel label.
- if(!factorLabels&&terms[0].length>14){
-  const digits=terms[0],columns=Math.ceil(Math.sqrt(digits.length*1.8));
-  terms=digits.match(new RegExp(`.{1,${columns}}`,'g'));
-  const fontSize=Math.min(18,r*1.2/Math.max(columns*.62,terms.length*1.15));
+ // Wrap long integers in either mode, including pending factorizations and
+ // large prime factors. A multiplication dot starts each subsequent factor;
+ // continuation rows have no dot, and powers stay with their final digits.
+ if(terms.some(term=>term.length>14)){
+  const columns=Math.ceil(Math.sqrt(terms.reduce((sum,term)=>sum+term.length,0)*1.8));
+  const rows=terms.flatMap((term,index)=>{
+   const [,digits,power='']=term.match(/^(-?\d+)([⁰¹²³⁴⁵⁶⁷⁸⁹]*)$/)||[null,term];
+   const chunks=digits.match(new RegExp(`.{1,${columns}}`,'g'));
+   chunks[chunks.length-1]+=power;
+   if(index)chunks[0]='· '+chunks[0];
+   return chunks;
+  });
+  const longest=Math.max(...rows.map(row=>row.length));
+  const fontSize=Math.min(18,r*1.2/Math.max(longest*.62,rows.length*1.15));
   if(fontSize<7)return;
   ctx.font=fontSize+'px monospace';
-  terms.forEach((row,i)=>ctx.fillText(row,x,y+(i-(terms.length-1)/2)*fontSize*1.15));
+  rows.forEach((row,i)=>ctx.fillText(row,x,y+(i-(rows.length-1)/2)*fontSize*1.15));
   return;
  }
  let low=.5,high=Math.min(40,r*.48),layout=null;
