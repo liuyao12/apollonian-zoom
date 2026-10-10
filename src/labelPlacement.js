@@ -60,25 +60,35 @@ function halfPlaneCentroid(shape,rect){
  return area?{x:mx/(3*area),y:my/(3*area)}:null;
 }
 
-// An enclosing circle is labelled in its exterior. That region can be
-// disconnected, so choose a fitting exterior disk instead of its centroid.
+// Label an off-screen enclosing circle along the ray pointing away from its
+// center. Use an exterior corner if that ray misses the visible exterior.
 function exteriorLabel(shape,rect){
- const candidate=radius=>{
+ const middle={x:(rect.left+rect.right)/2,y:(rect.top+rect.bottom)/2};
+ const dx=middle.x-shape.x,dy=middle.y-shape.y;
+ const centerOffscreen=shape.x<rect.left||shape.x>rect.right||shape.y<rect.top||shape.y>rect.bottom;
+ const candidate=(radius,opposite)=>{
   const left=rect.left+8+radius,right=rect.right-8-radius;
   const top=rect.top+8+radius,bottom=rect.bottom-8-radius;
   if(left>right||top>bottom)return null;
-  const corners=[{x:right,y:top},{x:left,y:top},{x:right,y:bottom},{x:left,y:bottom}];
   const distance=p=>Math.hypot(p.x-shape.x,p.y-shape.y);
+  if(opposite){
+   const t=Math.min(dx?((right-left)/2)/Math.abs(dx):Infinity,
+    dy?((bottom-top)/2)/Math.abs(dy):Infinity);
+   const point={x:middle.x+t*dx,y:middle.y+t*dy};
+   return distance(point)>=shape.r+radius?point:null;
+  }
+  const corners=[{x:right,y:top},{x:left,y:top},{x:right,y:bottom},{x:left,y:bottom}];
   const point=corners.reduce((best,p)=>distance(p)>distance(best)?p:best);
   return distance(point)>=shape.r+radius?point:null;
  };
- if(!candidate(0))return null;
+ const opposite=centerOffscreen&&!!candidate(0,true);
+ if(!candidate(0,opposite))return null;
  let low=0,high=Math.min(rect.right-rect.left,rect.bottom-rect.top)/2-8;
  for(let i=0;i<32;i++){
   const mid=(low+high)/2;
-  if(candidate(mid))low=mid;else high=mid;
+  if(candidate(mid,opposite))low=mid;else high=mid;
  }
- return low>10?{...candidate(low),r:low}:null;
+ return low>10?{...candidate(low,opposite),r:low}:null;
 }
 
 export function placeVisibleLabel(shape,rects){

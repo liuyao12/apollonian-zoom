@@ -83,3 +83,23 @@ test('an overflowing negative circle labels the exterior side of its line',()=>{
  assert.ok(label);assert.equal(label.x,750);assert.equal(label.y,350);
  assert.ok(label.x-label.r>=500-1e-8);
 });
+
+for(const [name,x,y,axis] of [
+ ['left',-300,200,'x'],['right',700,200,'x'],
+ ['above',200,-300,'y'],['below',200,700,'y']
+])test(`an outer center off-screen ${name} places its label directly opposite`,()=>{
+ const shape={type:'disk',x,y,r:500,outside:true};
+ const label=placeVisibleLabel(shape,rects);
+ assert.ok(label);
+ assert.equal(label[axis==='x'?'y':'x'],200);
+ assert.ok((label[axis]-200)*(200-shape[axis])>0);
+ assert.ok(Math.hypot(label.x-x,label.y-y)-label.r>=500-1e-8);
+});
+
+test('a diagonal off-screen outer center labels along the opposite ray',()=>{
+ const shape={type:'disk',x:-300,y:-100,r:650,outside:true};
+ const label=placeVisibleLabel(shape,rects);
+ assert.ok(label);
+ assert.ok(Math.abs((label.x-200)*300-(label.y-200)*500)<1e-5);
+ assert.ok(Math.hypot(label.x-shape.x,label.y-shape.y)-label.r>=650-1e-8);
+});
