@@ -1,5 +1,6 @@
 import {circle,reflect} from './apollonianBigInt.js';
 import {ARC_LINE_TOLERANCE_PX,circleBoundaryPrimitive} from './circleRenderer.js';
+import {placeVisibleLabel} from './labelPlacement.js';
 
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
 
@@ -263,7 +264,10 @@ function valleyIndistinguishable(config,replaced,camera,width,height){
   const c=config[i];
   if(!circleLooksStraight(c,camera,width,height,tolerance))continue;
   const tangent=localCircleTangent(c,camera,width,height);
-  if(!tangent)continue;
+  if(!tangent){
+   if(c.b>0n&&localCircleEquation(c,camera,width,height).f.n<0n)return true;
+   continue;
+  }
   normals.push({x:tangent.nx,y:tangent.ny});
   const direction=c.b>0n?1:-1;
   const offset=direction*tangent.signed+tolerance;
@@ -304,7 +308,12 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
  const stageStepDepth=18,stageMargin=Math.hypot(width,height);
  function radiusPixels(c){return camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);}
  function addCircle(c,configuration=null){
-  if(radiusPixels(c)<minRadiusPx||!circleBoundaryIntersects(c,camera,width,height,minRadiusPx))return;
+  if(radiusPixels(c)<minRadiusPx)return;
+  if(!circleBoundaryIntersects(c,camera,width,height,minRadiusPx)){
+   // An off-screen boundary can still leave its entire disk on screen.
+   // Keep that circle so zooming into its interior does not lose its label.
+   if(c.b<0n||localCircleEquation(c,camera,width,height).f.n>=0n)return;
+  }
   const key=circleKey(c);
   if(!seen.has(key)){
    const record=circle(c);record.configuration=configuration;
@@ -416,4 +425,21 @@ export function projectedBoundary(c,camera,width,height,tolerance=ARC_LINE_TOLER
   return giantCircleLine(c,camera,width,height,tolerance);
  const p=projectCircle(c,camera);
  return circleBoundaryPrimitive(p.x,p.y,p.r,width,height);
+}
+
+export function projectedLabelPlacement(c,camera,width,height,rects){
+ if(!circleLooksStraight(c,camera,width,height)){
+  const p=projectCircle(c,camera);
+  return placeVisibleLabel({type:'disk',...p,outside:c.b<0n},rects);
+ }
+ const tangent=localCircleTangent(c,camera,width,height);
+ if(!tangent||!Number.isFinite(tangent.signed)){
+  if(c.b>0n&&localCircleEquation(c,camera,width,height).f.n<0n)
+   return placeVisibleLabel({type:'rectangle'},rects);
+  return null;
+ }
+ const direction=c.b>0n?-1:1;
+ const nx=direction*tangent.nx,ny=direction*tangent.ny;
+ return placeVisibleLabel({type:'halfPlane',nx,ny,
+  offset:direction*tangent.signed-nx*width/2-ny*height/2},rects);
 }

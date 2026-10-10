@@ -1,8 +1,9 @@
 import {toFloat,generate} from './apollonianBigInt.js';
 import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
+import {unobstructedLabelRects} from './labelPlacement.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,projectedBoundary,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js';
+import {cameraForCircle,projectedBoundary,projectedLabelPlacement,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 import {randomRootCurvatures} from './randomConfig.js';
 
@@ -282,6 +283,14 @@ function draw(){
  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.textAlign='center';ctx.textBaseline='middle';
  const filtering=selectedResidues.size>0;
+ const canvasRect=canvas.getBoundingClientRect();
+ const obstacles=['zoom-tools','home-button','residue-panel','inspector','zoom-status']
+  .map(id=>document.getElementById(id)).filter(el=>!el.hidden).map(el=>{
+   const rect=el.getBoundingClientRect();
+   return {left:rect.left-canvasRect.left-4,right:rect.right-canvasRect.left+4,
+    top:rect.top-canvasRect.top-4,bottom:rect.bottom-canvasRect.top+4};
+  });
+ const labelRects=unobstructedLabelRects(canvas.width,canvas.height,obstacles);
  const drawOrder=!filtering?circles:[...circles].sort((a,b)=>Number(selectedResidues.has(residueMod(a.b)))-Number(selectedResidues.has(residueMod(b.b))));
  const items=drawOrder.map(e=>({e,c:projectCircle(e,camera)})),glowing=new Set();
  if(factorLabels)for(const {e,c} of items){
@@ -289,7 +298,7 @@ function draw(){
   if(e.neighborBends?.some(bend=>primeState(bend)===true))glowing.add(e);
  }
  for(const {e,c} of items){
-  const {x,y,r}=c;
+  const {r}=c;
   const residue=residueMod(c.b),highlighted=!filtering||selectedResidues.has(residue);
   const residueColor=residueColors.get(residue)||'#111';
   if(glowing.has(e)){
@@ -300,9 +309,9 @@ function draw(){
   ctx.strokeStyle=highlighted?residueColor:'rgba(0,0,0,.14)';
   ctx.fillStyle=highlighted?residueColor:'rgba(0,0,0,.18)';
   ctx.lineWidth=filtering&&highlighted?2.5:1;
-  const boundaryVisible=strokeProjectedBoundary(e,c);
-  if(c.b<0n&&boundaryVisible&&[x,y,r].every(Number.isFinite)){ctx.font=Math.max(18,r*.25)+'px sans-serif';const d=r+Math.max(30,r*.2);ctx.fillText(c.b.toString(),x+d/Math.SQRT2,y-d/Math.SQRT2);}
-  else if(c.b>0n&&r>10&&x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height)drawFittedLabel(labelTerms(c.b),x,y,r);
+  strokeProjectedBoundary(e,c);
+  const label=projectedLabelPlacement(e,camera,canvas.width,canvas.height,labelRects);
+  if(label)drawFittedLabel(labelTerms(c.b),label.x,label.y,label.r);
  }
  ctx.lineWidth=1;
  if(selectedCircle){ctx.save();ctx.strokeStyle='#111';ctx.lineWidth=3;strokeProjectedBoundary(selectedCircle);ctx.restore();}
