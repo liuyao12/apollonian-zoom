@@ -245,6 +245,43 @@ function valleyContainsViewport(config,replaced,camera,width,height,margin){
  return true;
 }
 
+// At a tangency, a whole infinite cusp can become thinner than a pixel.
+// Clip its local exterior/interior half-planes instead of walking millions
+// of circles whose visible arcs coincide with the two ancestor boundaries.
+function valleyIndistinguishable(config,replaced,camera,width,height){
+ const tolerance=ARC_LINE_TOLERANCE_PX/4;
+ const threshold=Math.hypot(width,height)**2/(8*tolerance);
+ let polygon=[{x:-2,y:-2},{x:width+2,y:-2},{x:width+2,y:height+2},{x:-2,y:height+2}];
+ const normals=[];
+ for(let i=0;i<4;i++)if(i!==replaced){
+  const c=config[i],radius=camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);
+  if(radius<threshold)continue;
+  const tangent=localCircleTangent(c,camera,width,height);
+  if(!tangent)continue;
+  normals.push({x:tangent.nx,y:tangent.ny});
+  const direction=c.b>0n?1:-1;
+  const offset=direction*tangent.signed+tolerance;
+  if(offset===Infinity)continue;
+  if(offset===-Infinity)return true;
+  const value=p=>direction*(tangent.nx*(p.x-width/2)+tangent.ny*(p.y-height/2))+offset;
+  const clipped=[];
+  for(let j=0;j<polygon.length;j++){
+   const a=polygon[j],b=polygon[(j+1)%polygon.length],va=value(a),vb=value(b);
+   if(va>=0)clipped.push(a);
+   if((va>=0)!==(vb>=0)){
+    const t=va/(va-vb);clipped.push({x:a.x+t*(b.x-a.x),y:a.y+t*(b.y-a.y)});
+   }
+  }
+  polygon=clipped;
+  if(!polygon.length)return true;
+ }
+ if(normals.length<2)return false;
+ return [...normals,{x:1,y:0},{x:0,y:1}].some(normal=>{
+  const values=polygon.map(p=>normal.x*p.x+normal.y*p.y);
+  return Math.max(...values)-Math.min(...values)<ARC_LINE_TOLERANCE_PX;
+ });
+}
+
 export function traversalStage(config,blockedIndex=null,parent=null,bridgeCircles=[]){
  return {config,blockedIndex,parent,bridgeCircles};
 }
@@ -289,6 +326,7 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
   if(radiusPixels(candidate)<minRadiusPx)continue;
   const bounds=projectedBounds(valleyPoints(node.config,node.replaced),camera);
   if(!boundsIntersect(bounds,width,height,minRadiusPx))continue;
+  if(valleyIndistinguishable(node.config,node.replaced,camera,width,height))continue;
   let safeStage=node.safeStage;
   if(node.depth>=stageStepDepth&&bounds.left<=width/2&&bounds.right>=width/2&&
    bounds.top<=height/2&&bounds.bottom>=height/2&&
@@ -326,17 +364,22 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
 
 // Compute a visually indistinguishable tangent line without ever constructing
 // the enormous screen-space center or radius of an ancestor circle.
-export function giantCircleLine(c,camera,width,height,tolerance=.25){
+function localCircleTangent(c,camera,width,height){
  const anchor=worldPointAt(camera,width/2,height/2);
  const center=pointForCircle(c),dx=sub(anchor.x,center.x),dy=sub(anchor.y,center.y),r=radiusFraction(c);
  const exponent=Math.max(binaryExponent(dx),binaryExponent(dy),binaryExponent(r));
  const dxn=scaledRatioToNumber(dx.n,dx.d,-exponent),dyn=scaledRatioToNumber(dy.n,dy.d,-exponent);
  const distance=Math.hypot(dxn,dyn),rn=scaledRatioToNumber(r.n,r.d,-exponent);
- if(!Number.isFinite(distance)||distance===0||!Number.isFinite(rn))return {type:'none'};
+ if(!Number.isFinite(distance)||distance===0||!Number.isFinite(rn))return null;
  const f=sub(add(square(dx),square(dy)),square(r));
  const signed=camera.scale.mantissa*scaledRatioToNumber(f.n,f.d,camera.scale.exponent-exponent)/(distance+rn);
- if(!Number.isFinite(signed))return {type:'none'};
  const nx=dxn/distance,ny=-dyn/distance;
+ return {nx,ny,signed};
+}
+export function giantCircleLine(c,camera,width,height,tolerance=.25){
+ const tangent=localCircleTangent(c,camera,width,height);
+ if(!tangent||!Number.isFinite(tangent.signed))return {type:'none'};
+ const {nx,ny,signed}=tangent;
  const extent=Math.abs(nx)*width/2+Math.abs(ny)*height/2;
  const centerX=width/2,centerY=height/2;
  const lineDistance=-signed;

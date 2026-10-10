@@ -144,3 +144,23 @@ test('uses a line only when curvature is below the pixel error bound',()=>{
  camera.scale=scaleFromBigInt(2n,4000000);camera.screenX=500-4000000;
  assert.equal(projectedBoundary(circle,camera,1000,700).type,'line');
 });
+
+for(const x of [0n,-1n])test(`a subpixel cusp at horizontal coordinate ${x} retains its ancestor lines`,()=>{
+ const config=presets['(-1,2,2,3)'];
+ const camera=cameraForCircle(config[0],500,350,scaleFromBigInt(1n<<2000n));
+ camera.anchorX={n:x,d:1n};camera.anchorY={n:0n,d:1n};
+ const started=performance.now();
+ const visible=visibleTreeProjected(config,camera,1000,700,2);
+ assert.ok(performance.now()-started<1000,'subpixel cusp traversal should be bounded');
+ const lines=visible.filter(c=>projectedBoundary(c,camera,1000,700).type==='line');
+ assert.equal(lines.length,2);
+});
+
+test('a rotated subpixel cusp also prunes indistinguishable descendants',()=>{
+ const config=presets['(-1,2,2,3)'].map(c=>({b:c.b,
+  bx:{n:3n*c.bx.n*c.by.d-4n*c.by.n*c.bx.d,d:5n*c.bx.d*c.by.d},
+  by:{n:4n*c.bx.n*c.by.d+3n*c.by.n*c.bx.d,d:5n*c.bx.d*c.by.d}}));
+ const camera=cameraForCircle(config[0],500,350,scaleFromBigInt(1n<<2000n));
+ const visible=visibleTreeProjected(config,camera,1000,700,2);
+ assert.equal(visible.filter(c=>projectedBoundary(c,camera,1000,700).type==='line').length,2);
+});
