@@ -60,9 +60,31 @@ function halfPlaneCentroid(shape,rect){
  return area?{x:mx/(3*area),y:my/(3*area)}:null;
 }
 
+// An enclosing circle is labelled in its exterior. That region can be
+// disconnected, so choose a fitting exterior disk instead of its centroid.
+function exteriorLabel(shape,rect){
+ const candidate=radius=>{
+  const left=rect.left+8+radius,right=rect.right-8-radius;
+  const top=rect.top+8+radius,bottom=rect.bottom-8-radius;
+  if(left>right||top>bottom)return null;
+  const corners=[{x:right,y:top},{x:left,y:top},{x:right,y:bottom},{x:left,y:bottom}];
+  const distance=p=>Math.hypot(p.x-shape.x,p.y-shape.y);
+  const point=corners.reduce((best,p)=>distance(p)>distance(best)?p:best);
+  return distance(point)>=shape.r+radius?point:null;
+ };
+ if(!candidate(0))return null;
+ let low=0,high=Math.min(rect.right-rect.left,rect.bottom-rect.top)/2-8;
+ for(let i=0;i<32;i++){
+  const mid=(low+high)/2;
+  if(candidate(mid))low=mid;else high=mid;
+ }
+ return low>10?{...candidate(low),r:low}:null;
+}
+
 export function placeVisibleLabel(shape,rects){
  const rect=rects[0];
  if(!rect)return null;
+ if(shape.type==='disk'&&shape.outside)return exteriorLabel(shape,rect);
  let point;
  if(shape.type==='disk'){
   if(shape.r<=10)return null;

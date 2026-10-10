@@ -21,11 +21,12 @@ test('a fully visible circle keeps its center',()=>{
  assert.ok(Math.abs(label.r-80)<1e-6);
 });
 
-test('a fully visible enclosing circle also keeps its geometric center',()=>{
+test('a fully visible enclosing circle keeps its label outside the packing',()=>{
  const config=presets['(-1,2,2,3)'];
  const camera=cameraForCircle(config[0],200,200,{mantissa:150,exponent:0});
  const label=projectedLabelPlacement(config[0],camera,400,400,rects);
- assert.ok(label);assert.equal(label.x,200);assert.equal(label.y,200);
+ assert.ok(label);
+ assert.ok(Math.hypot(label.x-200,label.y-200)-label.r>=150-1e-8);
 });
 
 test('a clipped semicircle uses its area centroid rather than its largest inscribed disk',()=>{
@@ -72,4 +73,13 @@ test('large curved disks keep a stable centroid before the straight-line cutoff'
  const label=placeVisibleLabel({type:'disk',x:-3999500,y:350,r:4000000},viewport(1000,700));
  assert.ok(label.x>249.99&&label.x<250);
  assert.ok(Math.abs(label.y-350)<1e-5);
+});
+
+test('an overflowing negative circle labels the exterior side of its line',()=>{
+ const outer=presets['(-1,2,2,3)'][0];
+ const camera=cameraForCircle(outer,500,350,scaleFromBigInt(1n<<2000n));
+ camera.anchorX={n:1n,d:1n};camera.anchorY={n:0n,d:1n};
+ const label=projectedLabelPlacement(outer,camera,1000,700,viewport(1000,700));
+ assert.ok(label);assert.equal(label.x,750);assert.equal(label.y,350);
+ assert.ok(label.x-label.r>=500-1e-8);
 });

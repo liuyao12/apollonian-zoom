@@ -430,7 +430,7 @@ export function projectedBoundary(c,camera,width,height,tolerance=ARC_LINE_TOLER
 export function projectedLabelPlacement(c,camera,width,height,rects){
  if(!circleLooksStraight(c,camera,width,height)){
   const p=projectCircle(c,camera);
-  return placeVisibleLabel({type:'disk',...p},rects);
+  return placeVisibleLabel({type:'disk',...p,outside:c.b<0n},rects);
  }
  const tangent=localCircleTangent(c,camera,width,height);
  if(!tangent||!Number.isFinite(tangent.signed)){
@@ -438,7 +438,7 @@ export function projectedLabelPlacement(c,camera,width,height,rects){
    return placeVisibleLabel({type:'rectangle'},rects);
   return null;
  }
- const direction=-1;
+ const direction=c.b<0n?1:-1;
  const nx=direction*tangent.nx,ny=direction*tangent.ny;
  return placeVisibleLabel({type:'halfPlane',nx,ny,
   offset:direction*tangent.signed-nx*width/2-ny*height/2},rects);
