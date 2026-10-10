@@ -1,65 +1,80 @@
-// Label space is an inscribed disk in the part of the circle that is visible.
-// Using that disk also lets the existing digit/factor layout fit safely.
-export function unobstructedLabelRects(width,height,obstacles=[]){
- let rects=[{left:0,right:width,top:0,bottom:height}];
- for(const obstacle of obstacles){
-  rects=rects.flatMap(rect=>{
-   const left=Math.max(rect.left,obstacle.left),right=Math.min(rect.right,obstacle.right);
-   const top=Math.max(rect.top,obstacle.top),bottom=Math.min(rect.bottom,obstacle.bottom);
-   if(left>=right||top>=bottom)return [rect];
-   return [
-    {...rect,right:left},{...rect,left:right},
-    {left,right,top:rect.top,bottom:top},{left,right,top:bottom,bottom:rect.bottom}
-   ].filter(r=>r.right-r.left>24&&r.bottom-r.top>24);
-  });
+// Labels use the area centroid of the circle portion inside the viewport.
+// Integrate clipped vertical slices in viewport-local coordinates. Avoid
+// subtracting large circle moments, which loses precision near the line limit.
+function diskCentroid(shape,rect){
+ const {x:cx,y:cy,r}=shape;
+ const left=Math.max(rect.left,cx-r),right=Math.min(rect.right,cx+r);
+ if(left>=right)return null;
+ const cuts=[left,right],width=rect.right-rect.left,height=rect.bottom-rect.top;
+ for(const edge of [rect.top,rect.bottom]){
+  const dy=edge-cy;
+  if(Math.abs(dy)<r){
+   const dx=Math.sqrt((r-dy)*(r+dy));
+   for(const x of [cx-dx,cx+dx])if(x>left&&x<right)cuts.push(x);
+  }
  }
- return rects;
+ cuts.sort((a,b)=>a-b);
+ const slice=x=>{
+  const dx=x-cx,h=Math.sqrt(Math.max(0,(r-dx)*(r+dx)));
+  const top=Math.max(rect.top,cy-h),bottom=Math.min(rect.bottom,cy+h);
+  const area=Math.max(0,bottom-top);
+  return [area,area*(x-rect.left)/width,area*((top+bottom)/2-rect.top)/height];
+ };
+ const simpson=(a,b,fa,fm,fb)=>fa.map((v,i)=>(b-a)*(v+4*fm[i]+fb[i])/6);
+ const integrate=(a,b,fa,fm,fb,whole,tolerance,depth)=>{
+  const mid=(a+b)/2,fl=slice((a+mid)/2),fr=slice((mid+b)/2);
+  const l=simpson(a,mid,fa,fl,fm),r=simpson(mid,b,fm,fr,fb);
+  const sum=l.map((v,i)=>v+r[i]);
+  if(!depth||Math.max(...sum.map((v,i)=>Math.abs(v-whole[i])))<=15*tolerance)
+   return sum.map((v,i)=>v+(v-whole[i])/15);
+  const il=integrate(a,mid,fa,fl,fm,l,tolerance/2,depth-1);
+  const ir=integrate(mid,b,fm,fr,fb,r,tolerance/2,depth-1);
+  return il.map((v,i)=>v+ir[i]);
+ };
+ const total=[0,0,0];
+ for(let i=1;i<cuts.length;i++){
+  const a=cuts[i-1],b=cuts[i],fa=slice(a),fm=slice((a+b)/2),fb=slice(b);
+  const part=integrate(a,b,fa,fm,fb,simpson(a,b,fa,fm,fb),width*height*1e-10/cuts.length,18);
+  part.forEach((v,j)=>total[j]+=v);
+ }
+ return total[0]>0?{x:rect.left+width*total[1]/total[0],y:rect.top+height*total[2]/total[0]}:null;
 }
 
-const clamp=(x,low,high)=>Math.max(low,Math.min(high,x));
-
-function candidate(shape,rect,radius){
- const padding=8,left=rect.left+padding+radius,right=rect.right-padding-radius;
- const top=rect.top+padding+radius,bottom=rect.bottom-padding-radius;
- if(left>right||top>bottom)return null;
- const middle={x:(left+right)/2,y:(top+bottom)/2};
- if(shape.type==='rectangle')return middle;
- if(shape.type==='disk'){
-  if(!shape.outside){
-   const point={x:clamp(shape.x,left,right),y:clamp(shape.y,top,bottom)};
-   return Math.hypot(point.x-shape.x,point.y-shape.y)+radius<=shape.r?point:null;
-  }
-  const corners=[{x:left,y:top},{x:right,y:top},{x:left,y:bottom},{x:right,y:bottom}];
-  const point=corners.reduce((best,p)=>Math.hypot(p.x-shape.x,p.y-shape.y)>
-   Math.hypot(best.x-shape.x,best.y-shape.y)?p:best);
-  return Math.hypot(point.x-shape.x,point.y-shape.y)>=shape.r+radius?point:null;
- }
+function halfPlaneCentroid(shape,rect){
+ const polygon=[{x:rect.left,y:rect.top},{x:rect.right,y:rect.top},
+  {x:rect.right,y:rect.bottom},{x:rect.left,y:rect.bottom}];
  const value=p=>shape.nx*p.x+shape.ny*p.y+shape.offset;
- if(value(middle)>=radius)return middle;
- const extreme={x:shape.nx>0?right:shape.nx<0?left:middle.x,
-  y:shape.ny>0?bottom:shape.ny<0?top:middle.y};
- if(value(extreme)<radius)return null;
- const shift=radius-value(middle);
- const projected={x:clamp(middle.x+shift*shape.nx,left,right),y:clamp(middle.y+shift*shape.ny,top,bottom)};
- if(value(projected)>=radius-1e-8)return projected;
- const t=(radius-value(middle))/(value(extreme)-value(middle));
- return {x:middle.x+t*(extreme.x-middle.x),y:middle.y+t*(extreme.y-middle.y)};
+ const clipped=[];
+ for(let i=0;i<polygon.length;i++){
+  const a=polygon[i],b=polygon[(i+1)%polygon.length],va=value(a),vb=value(b);
+  if(va>=0)clipped.push(a);
+  if((va>=0)!==(vb>=0)){
+   const t=va/(va-vb);clipped.push({x:a.x+t*(b.x-a.x),y:a.y+t*(b.y-a.y)});
+  }
+ }
+ let area=0,mx=0,my=0;
+ for(let i=0;i<clipped.length;i++){
+  const a=clipped[i],b=clipped[(i+1)%clipped.length],cross=a.x*b.y-b.x*a.y;
+  area+=cross;mx+=(a.x+b.x)*cross;my+=(a.y+b.y)*cross;
+ }
+ return area?{x:mx/(3*area),y:my/(3*area)}:null;
 }
 
 export function placeVisibleLabel(shape,rects){
- if(shape.type==='disk'&&!shape.outside&&shape.r<=10)return null;
- let best=null;
- for(const rect of rects){
-  let low=0,high=Math.min(rect.right-rect.left,rect.bottom-rect.top)/2-8;
-  if(high<=10||!candidate(shape,rect,0))continue;
-  if(shape.type==='disk'&&!shape.outside)high=Math.min(high,shape.r);
-  for(let i=0;i<32;i++){
-   const size=(low+high)/2;
-   if(candidate(shape,rect,size))low=size;else high=size;
-  }
-  if(low<=10||best&&low<=best.r)continue;
-  const point=candidate(shape,rect,low);
-  best={...point,r:low};
- }
- return best;
+ const rect=rects[0];
+ if(!rect)return null;
+ let point;
+ if(shape.type==='disk'){
+  if(shape.r<=10)return null;
+  const fullyVisible=shape.x-shape.r>=rect.left&&shape.x+shape.r<=rect.right&&
+   shape.y-shape.r>=rect.top&&shape.y+shape.r<=rect.bottom;
+  point=fullyVisible?{x:shape.x,y:shape.y}:diskCentroid(shape,rect);
+ }else if(shape.type==='halfPlane')point=halfPlaneCentroid(shape,rect);
+ else point={x:(rect.left+rect.right)/2,y:(rect.top+rect.bottom)/2};
+ if(!point)return null;
+ let radius=Math.min(point.x-rect.left-8,rect.right-point.x-8,
+  point.y-rect.top-8,rect.bottom-point.y-8);
+ if(shape.type==='disk')radius=Math.min(radius,shape.r-Math.hypot(point.x-shape.x,point.y-shape.y));
+ if(shape.type==='halfPlane')radius=Math.min(radius,shape.nx*point.x+shape.ny*point.y+shape.offset);
+ return radius>10?{...point,r:radius}:null;
 }

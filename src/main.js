@@ -1,6 +1,5 @@
 import {toFloat,generate} from './apollonianBigInt.js';
 import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
-import {unobstructedLabelRects} from './labelPlacement.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
 import {cameraForCircle,projectedBoundary,projectedLabelPlacement,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js';
@@ -283,14 +282,7 @@ function draw(){
  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.textAlign='center';ctx.textBaseline='middle';
  const filtering=selectedResidues.size>0;
- const canvasRect=canvas.getBoundingClientRect();
- const obstacles=['zoom-tools','home-button','residue-panel','inspector','zoom-status']
-  .map(id=>document.getElementById(id)).filter(el=>!el.hidden).map(el=>{
-   const rect=el.getBoundingClientRect();
-   return {left:rect.left-canvasRect.left-4,right:rect.right-canvasRect.left+4,
-    top:rect.top-canvasRect.top-4,bottom:rect.bottom-canvasRect.top+4};
-  });
- const labelRects=unobstructedLabelRects(canvas.width,canvas.height,obstacles);
+ const labelRects=[{left:0,right:canvas.width,top:0,bottom:canvas.height}];
  const drawOrder=!filtering?circles:[...circles].sort((a,b)=>Number(selectedResidues.has(residueMod(a.b)))-Number(selectedResidues.has(residueMod(b.b))));
  const items=drawOrder.map(e=>({e,c:projectCircle(e,camera)})),glowing=new Set();
  if(factorLabels)for(const {e,c} of items){
