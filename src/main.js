@@ -2,8 +2,8 @@ import {toFloat,generate} from './apollonianBigInt.js';
 import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,projectedBoundary,projectedDiskRegion,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js?v=disk-fills';
-import {clipHalfPlane,placeVisibleLabel} from './labelPlacement.js?v=disk-fills';
+import {cameraForCircle,projectedBoundary,projectedDiskRegion,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js?v=interior-fills';
+import {clipHalfPlane,placeVisibleLabel} from './labelPlacement.js?v=interior-fills';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 import {randomRootCurvatures} from './randomConfig.js';
 
@@ -279,11 +279,12 @@ function strokeProjectedBoundary(boundary){
 }
 
 function fillDiskRegion(region,boundary,viewport){
+ if(region.outside)return;
  ctx.beginPath();
  if(region.type==='disk'){
-  if(boundary.type==='arc')ctx.arc(boundary.x,boundary.y,boundary.r,0,2*Math.PI);
-  if(region.outside)ctx.rect(0,0,canvas.width,canvas.height);
-  ctx.fill('evenodd');
+  if(boundary.type!=='arc')return;
+  ctx.arc(boundary.x,boundary.y,boundary.r,0,2*Math.PI);
+  ctx.fill();
  }else if(region.type==='halfPlane'){
   const polygon=clipHalfPlane(region,viewport);
   if(!polygon.length)return;
@@ -319,7 +320,8 @@ function draw(){
    strokeProjectedBoundary(boundary);ctx.restore();
   }
   ctx.strokeStyle=highlighted?residueColor:'rgba(0,0,0,.14)';
-  ctx.fillStyle=highlighted?'#fff':'#626262';
+  const labelColor=region.outside?residueColor:'#fff';
+  ctx.fillStyle=highlighted?labelColor:'#626262';
   ctx.lineWidth=filtering&&highlighted?2.5:1;
   strokeProjectedBoundary(boundary);
   const terms=labelTerms(e.b);

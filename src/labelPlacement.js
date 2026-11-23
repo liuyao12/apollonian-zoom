@@ -121,7 +121,7 @@ function exteriorLineLabel(shape,rect){
 
 export function placeVisibleLabel(shape,rects){
  const rect=rects[0];
- if(!rect||shape.type==='empty'||(shape.outside&&shape.type==='rectangle'))return null;
+ if(!rect||shape.type==='empty')return null;
  if(shape.outside)return shape.type==='disk'?exteriorLabel(shape,rect):exteriorLineLabel(shape,rect);
  let point;
  if(shape.type==='disk'){

@@ -1,6 +1,6 @@
 import {circle,reflect} from './apollonianBigInt.js';
 import {ARC_LINE_TOLERANCE_PX,circleBoundaryPrimitive} from './circleRenderer.js';
-import {placeVisibleLabel} from './labelPlacement.js?v=disk-fills';
+import {placeVisibleLabel} from './labelPlacement.js?v=interior-fills';
 
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
 
@@ -308,12 +308,11 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
  const stageStepDepth=18,stageMargin=Math.hypot(width,height);
  function radiusPixels(c){return camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);}
  function addCircle(c,configuration=null){
-  if(c.b>0n&&radiusPixels(c)<minRadiusPx)return;
+  if(radiusPixels(c)<minRadiusPx)return;
   if(!circleBoundaryIntersects(c,camera,width,height,minRadiusPx)){
-   // An off-screen boundary can leave the viewport entirely in the disk,
-   // or entirely in the exterior represented by the enclosing circle.
-   const side=localCircleEquation(c,camera,width,height).f.n;
-   if(c.b<0n?side<=0n:side>=0n)return;
+   // An off-screen boundary can still leave its entire disk on screen.
+   // Keep that circle so zooming into its interior does not lose its label.
+   if(c.b<0n||localCircleEquation(c,camera,width,height).f.n>=0n)return;
   }
   const key=circleKey(c);
   if(!seen.has(key)){
@@ -435,8 +434,8 @@ export function projectedDiskRegion(c,camera,width,height){
  }
  const tangent=localCircleTangent(c,camera,width,height);
  if(!tangent||!Number.isFinite(tangent.signed)){
-  const side=localCircleEquation(c,camera,width,height).f.n;
-  return {type:(outside?side>0n:side<0n)?'rectangle':'empty',outside};
+  const coversViewport=!outside&&localCircleEquation(c,camera,width,height).f.n<0n;
+  return {type:coversViewport?'rectangle':'empty',outside};
  }
  const direction=outside?1:-1;
  const nx=direction*tangent.nx,ny=direction*tangent.ny;
