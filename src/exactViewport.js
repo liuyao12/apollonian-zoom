@@ -1,6 +1,6 @@
 import {circle,reflect} from './apollonianBigInt.js';
 import {ARC_LINE_TOLERANCE_PX,circleBoundaryPrimitive} from './circleRenderer.js';
-import {placeVisibleLabel} from './labelPlacement.js?v=exterior-fixed-size';
+import {placeVisibleLabel} from './labelPlacement.js?v=disk-fills';
 
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
 
@@ -308,11 +308,12 @@ export function visibleTreeProjected(config,camera,width,height,minRadiusPx=2,bl
  const stageStepDepth=18,stageMargin=Math.hypot(width,height);
  function radiusPixels(c){return camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);}
  function addCircle(c,configuration=null){
-  if(radiusPixels(c)<minRadiusPx)return;
+  if(c.b>0n&&radiusPixels(c)<minRadiusPx)return;
   if(!circleBoundaryIntersects(c,camera,width,height,minRadiusPx)){
-   // An off-screen boundary can still leave its entire disk on screen.
-   // Keep that circle so zooming into its interior does not lose its label.
-   if(c.b<0n||localCircleEquation(c,camera,width,height).f.n>=0n)return;
+   // An off-screen boundary can leave the viewport entirely in the disk,
+   // or entirely in the exterior represented by the enclosing circle.
+   const side=localCircleEquation(c,camera,width,height).f.n;
+   if(c.b<0n?side<=0n:side>=0n)return;
   }
   const key=circleKey(c);
   if(!seen.has(key)){
@@ -427,19 +428,22 @@ export function projectedBoundary(c,camera,width,height,tolerance=ARC_LINE_TOLER
  return circleBoundaryPrimitive(p.x,p.y,p.r,width,height);
 }
 
-export function projectedLabelPlacement(c,camera,width,height,rects,labelRadius=48){
+export function projectedDiskRegion(c,camera,width,height){
+ const outside=c.b<0n;
  if(!circleLooksStraight(c,camera,width,height)){
-  const p=projectCircle(c,camera);
-  return placeVisibleLabel({type:'disk',...p,outside:c.b<0n,labelRadius},rects);
+  return {type:'disk',...projectCircle(c,camera),outside};
  }
  const tangent=localCircleTangent(c,camera,width,height);
  if(!tangent||!Number.isFinite(tangent.signed)){
-  if(c.b>0n&&localCircleEquation(c,camera,width,height).f.n<0n)
-   return placeVisibleLabel({type:'rectangle'},rects);
-  return null;
+  const side=localCircleEquation(c,camera,width,height).f.n;
+  return {type:(outside?side>0n:side<0n)?'rectangle':'empty',outside};
  }
- const direction=c.b<0n?1:-1;
+ const direction=outside?1:-1;
  const nx=direction*tangent.nx,ny=direction*tangent.ny;
- return placeVisibleLabel({type:'halfPlane',nx,ny,outside:c.b<0n,labelRadius,
-  offset:direction*tangent.signed-nx*width/2-ny*height/2},rects);
+ return {type:'halfPlane',nx,ny,outside,offset:direction*tangent.signed-nx*width/2-ny*height/2};
+}
+
+export function projectedLabelPlacement(c,camera,width,height,rects,labelRadius=48){
+ const region=projectedDiskRegion(c,camera,width,height);
+ return placeVisibleLabel({...region,labelRadius},rects);
 }

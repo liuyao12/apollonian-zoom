@@ -68,6 +68,15 @@ test('retains exact visible tangencies for arithmetic overlays',()=>{
  assert.ok(bend2?.neighborBends.includes(3n));
 });
 
+test('retains the enclosing circle when only its exterior fills the viewport',()=>{
+ const root=presets['(-1,2,2,3)'],outer=root[0];
+ for(const scale of [scaleFromBigInt(1n,280),scaleFromBigInt(1n<<2000n)]){
+  const camera=cameraForCircle(outer,500,350,scale);
+  camera.anchorX={n:10n,d:1n};
+  assert.deepEqual(visibleTreeProjected(root,camera,1000,700).map(c=>c.b),[outer.b]);
+ }
+});
+
 test('draws an overflowing ancestor circle as its local tangent line',()=>{
  let config=presets['(-1,2,2,3)'],target;
  for(let step=1;step<=4000;step++){

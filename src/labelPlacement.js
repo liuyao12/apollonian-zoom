@@ -40,7 +40,7 @@ function diskCentroid(shape,rect){
  return total[0]>0?{x:rect.left+width*total[1]/total[0],y:rect.top+height*total[2]/total[0]}:null;
 }
 
-function halfPlaneCentroid(shape,rect){
+export function clipHalfPlane(shape,rect){
  const polygon=[{x:rect.left,y:rect.top},{x:rect.right,y:rect.top},
   {x:rect.right,y:rect.bottom},{x:rect.left,y:rect.bottom}];
  const value=p=>shape.nx*p.x+shape.ny*p.y+shape.offset;
@@ -52,6 +52,11 @@ function halfPlaneCentroid(shape,rect){
    const t=va/(va-vb);clipped.push({x:a.x+t*(b.x-a.x),y:a.y+t*(b.y-a.y)});
   }
  }
+ return clipped;
+}
+
+function halfPlaneCentroid(shape,rect){
+ const clipped=clipHalfPlane(shape,rect);
  let area=0,mx=0,my=0;
  for(let i=0;i<clipped.length;i++){
   const a=clipped[i],b=clipped[(i+1)%clipped.length],cross=a.x*b.y-b.x*a.y;
@@ -116,7 +121,7 @@ function exteriorLineLabel(shape,rect){
 
 export function placeVisibleLabel(shape,rects){
  const rect=rects[0];
- if(!rect)return null;
+ if(!rect||shape.type==='empty'||(shape.outside&&shape.type==='rectangle'))return null;
  if(shape.outside)return shape.type==='disk'?exteriorLabel(shape,rect):exteriorLineLabel(shape,rect);
  let point;
  if(shape.type==='disk'){

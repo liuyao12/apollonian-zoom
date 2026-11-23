@@ -2,7 +2,8 @@ import {toFloat,generate} from './apollonianBigInt.js';
 import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,projectedBoundary,projectedLabelPlacement,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js?v=exterior-fixed-size';
+import {cameraForCircle,projectedBoundary,projectedDiskRegion,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js?v=disk-fills';
+import {clipHalfPlane,placeVisibleLabel} from './labelPlacement.js?v=disk-fills';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 import {randomRootCurvatures} from './randomConfig.js';
 
@@ -22,7 +23,7 @@ const zoomStatus=document.getElementById('zoom-status');
 let selectedCircle=null,homeScaleLog=0,pointerStart=null;
 const MIN_CIRCLE_RADIUS_PX=2;
 const PRIME_GLOW_MIN_RADIUS_PX=5;
-const RESIDUE_PALETTE=['#1565c0','#d35400','#14805e','#b13b72','#6f42c1','#8c564b','#00838f','#c62828'];
+const RESIDUE_PALETTE=['#1565c0','#c44e00','#14805e','#b13b72','#6f42c1','#8c564b','#00838f','#c62828'];
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
@@ -269,13 +270,29 @@ function drawFittedLabel(terms,x,y,r){
  });
 }
 
-function strokeProjectedBoundary(e){
- const boundary=projectedBoundary(e,camera,canvas.width,canvas.height);
- if(boundary.type==='none')return false;
+function strokeProjectedBoundary(boundary){
+ if(boundary.type==='none')return;
  ctx.beginPath();
  if(boundary.type==='arc')ctx.arc(boundary.x,boundary.y,boundary.r,0,2*Math.PI);
  else{ctx.moveTo(boundary.x1,boundary.y1);ctx.lineTo(boundary.x2,boundary.y2);}
- ctx.stroke();return true;
+ ctx.stroke();
+}
+
+function fillDiskRegion(region,boundary,viewport){
+ ctx.beginPath();
+ if(region.type==='disk'){
+  if(boundary.type==='arc')ctx.arc(boundary.x,boundary.y,boundary.r,0,2*Math.PI);
+  if(region.outside)ctx.rect(0,0,canvas.width,canvas.height);
+  ctx.fill('evenodd');
+ }else if(region.type==='halfPlane'){
+  const polygon=clipHalfPlane(region,viewport);
+  if(!polygon.length)return;
+  ctx.moveTo(polygon[0].x,polygon[0].y);
+  for(let i=1;i<polygon.length;i++)ctx.lineTo(polygon[i].x,polygon[i].y);
+  ctx.closePath();ctx.fill();
+ }else if(region.type==='rectangle'){
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+ }
 }
 
 function draw(){
@@ -284,37 +301,43 @@ function draw(){
  const filtering=selectedResidues.size>0;
  const labelRects=[{left:0,right:canvas.width,top:0,bottom:canvas.height}];
  const drawOrder=!filtering?circles:[...circles].sort((a,b)=>Number(selectedResidues.has(residueMod(a.b)))-Number(selectedResidues.has(residueMod(b.b))));
- const items=drawOrder.map(e=>({e,c:projectCircle(e,camera)})),glowing=new Set();
- if(factorLabels)for(const {e,c} of items){
-  if(e.b<2n||c.r<PRIME_GLOW_MIN_RADIUS_PX||primeState(e.b)!==true)continue;
-  if(e.neighborBends?.some(bend=>primeState(bend)===true))glowing.add(e);
- }
- for(const {e,c} of items){
-  const {r}=c;
-  const residue=residueMod(c.b),highlighted=!filtering||selectedResidues.has(residue);
-  const residueColor=residueColors.get(residue)||'#111';
-  if(glowing.has(e)){
+ const items=drawOrder.map(e=>{
+  const residue=residueMod(e.b);
+  const region=projectedDiskRegion(e,camera,canvas.width,canvas.height);
+  const boundary=projectedBoundary(e,camera,canvas.width,canvas.height);
+  const highlighted=!filtering||selectedResidues.has(residue),residueColor=residueColors.get(residue)||'#111';
+  ctx.fillStyle=highlighted?residueColor:'#ededed';
+  fillDiskRegion(region,boundary,labelRects[0]);
+  return {e,region,boundary,highlighted,residueColor};
+ });
+ for(const {e,region,boundary,highlighted,residueColor} of items){
+  const r=region.r??Infinity;
+  if(factorLabels&&e.b>=2n&&r>=PRIME_GLOW_MIN_RADIUS_PX&&primeState(e.b)===true&&
+   e.neighborBends?.some(bend=>primeState(bend)===true)){
    ctx.save();ctx.strokeStyle=residueColor;ctx.lineWidth=4;ctx.globalAlpha=.9;
    ctx.shadowColor=residueColor;ctx.shadowBlur=Math.min(22,Math.max(9,r*.16));
-   strokeProjectedBoundary(e,c);ctx.restore();
+   strokeProjectedBoundary(boundary);ctx.restore();
   }
   ctx.strokeStyle=highlighted?residueColor:'rgba(0,0,0,.14)';
-  ctx.fillStyle=highlighted?residueColor:'rgba(0,0,0,.18)';
+  ctx.fillStyle=highlighted?'#fff':'#626262';
   ctx.lineWidth=filtering&&highlighted?2.5:1;
-  strokeProjectedBoundary(e,c);
-  const terms=labelTerms(c.b);
+  strokeProjectedBoundary(boundary);
+  const terms=labelTerms(e.b);
   // Outer labels always use their full-scale layout. Size the placement box
   // from that text, independently of the available exterior or camera zoom.
   let exteriorRadius=48;
-  if(c.b<0n){
+  if(region.outside){
    ctx.font='38.4px sans-serif';
    exteriorRadius=Math.min(80,Math.max(32,Math.hypot(ctx.measureText(terms.join(' · ')).width,44)/2));
   }
-  const label=projectedLabelPlacement(e,camera,canvas.width,canvas.height,labelRects,exteriorRadius);
-  if(label)drawFittedLabel(terms,label.x,label.y,c.b<0n?80:label.r);
+  const label=placeVisibleLabel({...region,labelRadius:exteriorRadius},labelRects);
+  if(label)drawFittedLabel(terms,label.x,label.y,region.outside?80:label.r);
  }
  ctx.lineWidth=1;
- if(selectedCircle){ctx.save();ctx.strokeStyle='#111';ctx.lineWidth=3;strokeProjectedBoundary(selectedCircle);ctx.restore();}
+ if(selectedCircle){
+  ctx.save();ctx.strokeStyle='#111';ctx.lineWidth=3;
+  strokeProjectedBoundary(projectedBoundary(selectedCircle,camera,canvas.width,canvas.height));ctx.restore();
+ }
  const digits=Math.max(0,...circles.filter(c=>c.b>0n).map(c=>c.b.toString().length));
  const orders=Math.max(0,Math.floor((scaleLog(camera.scale)-homeScaleLog)/Math.LN10));
  zoomStatus.textContent=`${orders} zoom orders · ${digits}-digit curvatures`;
