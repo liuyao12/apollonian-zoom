@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {reflect} from '../src/apollonianBigInt.js';
 import {presets} from '../src/presets.js';
-import {cameraForCircle,giantCircleLine,projectedBoundary,projectCircle,reanchorCamera,scaleFromBigInt,stageNeedsParent,traversalStage,visibleTreeProjected,worldPointAt,zoomCameraAt} from '../src/exactViewport.js';
+import {cameraForCircle,giantCircleLine,projectedBoundary,projectCircle,reanchorCamera,scaledRatioToNumber,scaleFromBigInt,stageNeedsParent,traversalStage,visibleTreeProjected,worldPointAt,zoomCameraAt} from '../src/exactViewport.js';
+
+test('projects small ratios even when the binary scale alone would overflow or underflow',()=>{
+ assert.equal(scaledRatioToNumber(-3n,8n,4),-6);
+ assert.equal(scaledRatioToNumber(1n,2n,1024),2**1023);
+ assert.equal(scaledRatioToNumber(2n,1n,-1075),Number.MIN_VALUE);
+});
 
 function deepCircle(depth){
  let config=presets['(-1,2,2,3)'],target;

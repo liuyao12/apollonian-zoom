@@ -2,8 +2,9 @@ import {toFloat,generate} from './apollonianBigInt.js';
 import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,projectedBoundary,projectedDiskRegion,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt} from './exactViewport.js?v=interior-fills';
+import {cameraForCircle,projectedBoundary,projectedDiskRegion,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt,zoomPathToCircle} from './exactViewport.js?v=animated-dive';
 import {clipHalfPlane,placeVisibleLabel} from './labelPlacement.js?v=interior-fills';
+import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 import {randomRootCurvatures} from './randomConfig.js';
 
@@ -27,12 +28,14 @@ const RESIDUE_PALETTE=['#1565c0','#c44e00','#14805e','#b13b72','#6f42c1','#8c564
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
+const DIVE_DURATION_MS=2200;
 let current=Object.keys(presets)[0],currentConfig=presets[current],viewStage=traversalStage(currentConfig),circles=[],camera=null;
+let projectedCircles=[],workerDrawFrame=null;
 let allowedResidues=new Set(),residueColors=new Map(),selectedResidues=new Set();
 const customConfigs=[];
 const presetBends=Object.keys(presets).map(name=>parseCurvatures(name));
 const pointers=new Map();let gesture=null;
-let homeFrame=null;
+let navigationFrame=null;
 
 const factorWorker=new Worker(new URL('./factorWorker.js',import.meta.url),{type:'module'});
 const factorCache=new Map(),factorQueue=[],factorQueued=new Set();
@@ -55,11 +58,16 @@ function requestFactors(value){
 
 function resetFactorQueue(){factorQueue.length=0;factorQueued.clear();}
 
+function requestWorkerDraw(){
+ if(!factorLabels||workerDrawFrame!==null)return;
+ workerDrawFrame=requestAnimationFrame(()=>{workerDrawFrame=null;draw();});
+}
+
 factorWorker.onmessage=e=>{
  const {value,terms,prime}=e.data;
  factorCache.set(value,terms);factorActive=null;
  if(typeof prime==='boolean')primeCache.set(value,prime);
- draw();pumpFactorQueue();
+ requestWorkerDraw();pumpFactorQueue();
 };
 
 factorWorker.onerror=()=>{
@@ -94,7 +102,7 @@ function primeState(value){
 }
 primeWorker.onmessage=e=>{
  const {value,prime}=e.data;primeCache.set(value,prime);primeActive=null;
- draw();pumpPrimeQueue();
+ requestWorkerDraw();pumpPrimeQueue();
 };
 primeWorker.onerror=()=>{primeActive=null;resetPrimeQueue();};
 
@@ -158,6 +166,14 @@ function update(){
  while(viewStage.parent&&stageNeedsParent(viewStage,camera,canvas.width,canvas.height))viewStage=viewStage.parent;
  circles=visibleTreeProjected(viewStage.config,camera,canvas.width,canvas.height,MIN_CIRCLE_RADIUS_PX,
   viewStage.blockedIndex,viewStage.bridgeCircles,factorLabels);
+ // Filters and factor results repaint the same viewport geometry.
+ projectedCircles=circles.map(circle=>{
+  const region=projectedDiskRegion(circle,camera,canvas.width,canvas.height);
+  const boundary=region.type==='disk'
+   ?circleBoundaryPrimitive(region.x,region.y,region.r,canvas.width,canvas.height)
+   :projectedBoundary(circle,camera,canvas.width,canvas.height);
+  return {circle,region,boundary,residue:residueMod(circle.b)};
+ });
  if(circles.nextStage)viewStage=traversalStage(circles.nextStage.config,circles.nextStage.blockedIndex,viewStage,
   circles.nextStage.bridgeCircles);
 }
@@ -167,12 +183,16 @@ function fitOuter(){
  camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,scaleFromNumber(fit.zoom));
  homeScaleLog=scaleLog(camera.scale);
 }
-function cancelHomeAnimation(){if(homeFrame!==null){cancelAnimationFrame(homeFrame);homeFrame=null;}}
-function rebuild(){cancelHomeAnimation();selectedCircle=null;inspector.hidden=true;viewStage=traversalStage(currentConfig);fitOuter();update();draw();}
+function cancelNavigationAnimation(){
+ if(navigationFrame!==null)cancelAnimationFrame(navigationFrame);
+ navigationFrame=null;
+}
+function rebuild(){cancelNavigationAnimation();selectedCircle=null;inspector.hidden=true;viewStage=traversalStage(currentConfig);fitOuter();update();draw();}
 function resize(){
  const oldWidth=canvas.width,oldHeight=canvas.height,rect=canvas.getBoundingClientRect();
  canvas.width=Math.max(1,Math.round(rect.width));canvas.height=Math.max(1,Math.round(rect.height));
  if(!camera){rebuild();return;}
+ if(canvas.width!==oldWidth||canvas.height!==oldHeight)cancelNavigationAnimation();
  camera.screenX+=(canvas.width-oldWidth)/2;camera.screenY+=(canvas.height-oldHeight)/2;
  homeScaleLog=scaleLog(scaleFromNumber(fitOuterFor(currentConfig,canvas.width,canvas.height).zoom));
  update();draw();
@@ -248,6 +268,12 @@ function drawFittedLabel(terms,x,y,r){
   return;
  }
  let low=.5,high=Math.min(40,r*.48),layout=null;
+ if(terms.length===1){
+  ctx.font=high+'px sans-serif';
+  if(Math.hypot(ctx.measureText(terms[0]).width,high)<=r*1.6){
+   ctx.fillText(terms[0],x,y);return;
+  }
+ }
  for(let i=0;i<12;i++){
   const size=(low+high)/2,candidate=layoutAtSize(terms,size,r);
   if(candidate){layout=candidate;low=size;}else high=size;
@@ -301,43 +327,42 @@ function draw(){
  ctx.textAlign='center';ctx.textBaseline='middle';
  const filtering=selectedResidues.size>0;
  const labelRects=[{left:0,right:canvas.width,top:0,bottom:canvas.height}];
- const drawOrder=!filtering?circles:[...circles].sort((a,b)=>Number(selectedResidues.has(residueMod(a.b)))-Number(selectedResidues.has(residueMod(b.b))));
- const items=drawOrder.map(e=>{
-  const residue=residueMod(e.b);
-  const region=projectedDiskRegion(e,camera,canvas.width,canvas.height);
-  const boundary=projectedBoundary(e,camera,canvas.width,canvas.height);
-  const highlighted=!filtering||selectedResidues.has(residue),residueColor=residueColors.get(residue)||'#111';
-  ctx.fillStyle=highlighted?residueColor:'#ededed';
+ for(const {region,boundary,residue} of projectedCircles){
+  const highlighted=!filtering||selectedResidues.has(residue);
+  ctx.fillStyle=highlighted?residueColors.get(residue):'#ededed';
   fillDiskRegion(region,boundary,labelRects[0]);
-  return {e,region,boundary,highlighted,residueColor};
- });
- for(const {e,region,boundary,highlighted,residueColor} of items){
+ }
+ if(factorLabels)for(const {circle,region,boundary,residue} of projectedCircles){
   const r=region.r??Infinity;
-  if(factorLabels&&e.b>=2n&&r>=PRIME_GLOW_MIN_RADIUS_PX&&primeState(e.b)===true&&
-   e.neighborBends?.some(bend=>primeState(bend)===true)){
+  if(circle.b>=2n&&r>=PRIME_GLOW_MIN_RADIUS_PX&&primeState(circle.b)===true&&
+   circle.neighborBends?.some(bend=>primeState(bend)===true)){
+   const residueColor=residueColors.get(residue);
    ctx.save();ctx.strokeStyle=residueColor;ctx.lineWidth=4;ctx.globalAlpha=.9;
    ctx.shadowColor=residueColor;ctx.shadowBlur=Math.min(22,Math.max(9,r*.16));
    strokeProjectedBoundary(boundary);ctx.restore();
   }
-  ctx.strokeStyle=highlighted?residueColor:'rgba(0,0,0,.14)';
-  const labelColor=region.outside?residueColor:'#fff';
-  ctx.fillStyle=highlighted?labelColor:'#626262';
-  ctx.lineWidth=filtering&&highlighted?2.5:1;
-  strokeProjectedBoundary(boundary);
-  const terms=labelTerms(e.b);
+ }
+ ctx.strokeStyle='#000';ctx.lineWidth=2;
+ for(const {boundary} of projectedCircles)strokeProjectedBoundary(boundary);
+ for(const {circle,region,residue} of projectedCircles){
+  let labelRegion=region,terms;
   // Outer labels always use their full-scale layout. Size the placement box
   // from that text, independently of the available exterior or camera zoom.
-  let exteriorRadius=48;
   if(region.outside){
+   terms=labelTerms(circle.b);
    ctx.font='38.4px sans-serif';
-   exteriorRadius=Math.min(80,Math.max(32,Math.hypot(ctx.measureText(terms.join(' · ')).width,44)/2));
+   const labelRadius=Math.min(80,Math.max(32,Math.hypot(ctx.measureText(terms.join(' · ')).width,44)/2));
+   labelRegion={...region,labelRadius};
   }
-  const label=placeVisibleLabel({...region,labelRadius:exteriorRadius},labelRects);
-  if(label)drawFittedLabel(terms,label.x,label.y,region.outside?80:label.r);
+  const label=placeVisibleLabel(labelRegion,labelRects);
+  if(!label)continue;
+  const highlighted=!filtering||selectedResidues.has(residue);
+  const labelColor=region.outside?residueColors.get(residue):'#fff';
+  ctx.fillStyle=highlighted?labelColor:'#626262';
+  drawFittedLabel(terms??labelTerms(circle.b),label.x,label.y,region.outside?80:label.r);
  }
- ctx.lineWidth=1;
  if(selectedCircle){
-  ctx.save();ctx.strokeStyle='#111';ctx.lineWidth=3;
+  ctx.save();ctx.lineWidth=3;
   strokeProjectedBoundary(projectedBoundary(selectedCircle,camera,canvas.width,canvas.height));ctx.restore();
  }
  const digits=Math.max(0,...circles.filter(c=>c.b>0n).map(c=>c.b.toString().length));
@@ -350,7 +375,7 @@ function zoomAt(oldX,oldY,newX,newY,factor){
 }
 
 function animateHome(){
- cancelHomeAnimation();
+ cancelNavigationAnimation();
  const outer=currentConfig.find(c=>c.b<0n)||currentConfig[0];
  const target=fitOuterFor(currentConfig,canvas.width,canvas.height),targetScale=scaleFromNumber(target.zoom);
  if(matchMedia('(prefers-reduced-motion: reduce)').matches){
@@ -384,10 +409,10 @@ function animateHome(){
    camera.screenY=panStart.anchorY+(canvas.height/2-panStart.outerY)*eased;
   }
   update();draw();
-  if(elapsed<duration)homeFrame=requestAnimationFrame(step);
-  else{camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,targetScale);viewStage=traversalStage(currentConfig);homeFrame=null;update();draw();}
+  if(elapsed<duration)navigationFrame=requestAnimationFrame(step);
+  else{camera=cameraForCircle(outer,canvas.width/2,canvas.height/2,targetScale);viewStage=traversalStage(currentConfig);navigationFrame=null;update();draw();}
  }
- homeFrame=requestAnimationFrame(step);
+ navigationFrame=requestAnimationFrame(step);
 }
 
 homeButton.addEventListener('click',animateHome);
@@ -436,7 +461,7 @@ document.getElementById('copy-value').onclick=async()=>{
  setTimeout(()=>button.textContent='Copy exact values',1800);
 };
 document.getElementById('dive-button').onclick=()=>{
- cancelHomeAnimation();
+ cancelNavigationAnimation();
  const candidates=circles.filter(c=>c.b>0n&&c.configuration);
  const chosen=candidates.reduce((best,c)=>{
   const p=projectCircle(c,camera),distance=Math.hypot(p.x-canvas.width/2,p.y-canvas.height/2);
@@ -444,16 +469,26 @@ document.getElementById('dive-button').onclick=()=>{
  },null);
  if(!chosen)return;
  const {target}=descendConfiguration(chosen.c.configuration);
- camera=cameraForCircle(target,canvas.width/2,canvas.height/2,scaleFromBigInt(target.b,Math.min(150,Math.min(canvas.width,canvas.height)*.24)));
- update();inspectCircle(target);
+ const targetScale=scaleFromBigInt(target.b,Math.min(150,Math.min(canvas.width,canvas.height)*.24));
+ const cameraAt=zoomPathToCircle(camera,target,canvas.width,canvas.height,targetScale);
+ const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const started=performance.now();
+ selectedCircle=null;inspector.hidden=true;
+ function step(now){
+  const t=reducedMotion?1:Math.min(1,Math.max(0,(now-started)/DIVE_DURATION_MS));
+  camera=cameraAt(t*t*(3-2*t));update();
+  if(t===1){navigationFrame=null;inspectCircle(target);return;}
+  draw();navigationFrame=requestAnimationFrame(step);
+ }
+ step(started);
 };
 for(const [id,factor] of [['zoom-in',2],['zoom-out',.5]])document.getElementById(id).onclick=()=>{
- cancelHomeAnimation();zoomAt(canvas.width/2,canvas.height/2,canvas.width/2,canvas.height/2,factor);update();draw();
+ cancelNavigationAnimation();zoomAt(canvas.width/2,canvas.height/2,canvas.width/2,canvas.height/2,factor);update();draw();
 };
 canvas.addEventListener('dblclick',e=>{
  const rect=canvas.getBoundingClientRect(),c=circleAt(e.clientX-rect.left,e.clientY-rect.top);
  if(!c||c.b<=0n)return;
- cancelHomeAnimation();camera=cameraForCircle(c,canvas.width/2,canvas.height/2,
+ cancelNavigationAnimation();camera=cameraForCircle(c,canvas.width/2,canvas.height/2,
   scaleFromBigInt(c.b,Math.min(canvas.width,canvas.height)*.3));update();inspectCircle(c);
 });
 
@@ -480,7 +515,7 @@ customForm.addEventListener('submit',e=>{
 });
 
 canvas.addEventListener('wheel',e=>{
- e.preventDefault();cancelHomeAnimation();const rect=canvas.getBoundingClientRect();
+ e.preventDefault();cancelNavigationAnimation();const rect=canvas.getBoundingClientRect();
  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
  const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?canvas.height:1);
  if(zoomAt(mx,my,mx,my,Math.exp(-Math.max(-1000,Math.min(1000,delta))*WHEEL_ZOOM_SENSITIVITY))){update();draw();}
@@ -496,7 +531,7 @@ function currentGesture(){
 
 canvas.addEventListener('pointerdown',e=>{
  if(e.pointerType==='mouse'&&e.button!==0)return;
- e.preventDefault();cancelHomeAnimation();canvas.setPointerCapture(e.pointerId);
+ e.preventDefault();cancelNavigationAnimation();canvas.setPointerCapture(e.pointerId);
  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});gesture=currentGesture();
  if(pointers.size===1)pointerStart={x:e.clientX,y:e.clientY,moved:false};
  else if(pointerStart)pointerStart.moved=true;

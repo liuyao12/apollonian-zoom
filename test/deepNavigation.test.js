@@ -2,7 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {presets} from '../src/presets.js';
 import {descendConfiguration,exactCircleValues} from '../src/deepNavigation.js';
-import {cameraForCircle,projectCircle,scaleFromBigInt,traversalStage,visibleTreeProjected} from '../src/exactViewport.js';
+import {cameraForCircle,projectCircle,scaleFromBigInt,traversalStage,visibleTreeProjected,zoomPathToCircle} from '../src/exactViewport.js';
+
+test('a deep zoom path moves and magnifies continuously beyond Number range',()=>{
+ const {target}=descendConfiguration(presets['(-1,2,2,3)'],800);
+ const start=cameraForCircle(target,300,200,scaleFromBigInt(target.b,1));
+ const path=zoomPathToCircle(start,target,1000,700,scaleFromBigInt(target.b,144));
+ for(const t of [0,.25,.5,.75,1]){
+  const p=projectCircle(target,path(t));
+  assert.equal(p.x,300+200*t);assert.equal(p.y,200+150*t);
+  assert.ok(Math.abs(p.r-144**t)<1e-8);
+ }
+});
+
+test('a dive from inside a giant ancestor can ease out to its target',()=>{
+ const config=presets['(-1,2,2,3)'],ancestor=config[1],{target}=descendConfiguration(config);
+ const start=cameraForCircle(ancestor,500,350,scaleFromBigInt(1n<<2000n));
+ assert.equal(Math.abs(projectCircle(target,start).x),Infinity);
+ const path=zoomPathToCircle(start,target,1000,700,scaleFromBigInt(target.b,150));
+ const midpoint=projectCircle(ancestor,path(.5)),end=projectCircle(target,path(1));
+ assert.ok(Number.isFinite(midpoint.x)&&Number.isFinite(midpoint.y));
+ assert.equal(end.x,500);assert.equal(end.y,350);assert.ok(Math.abs(end.r-150)<1e-8);
+});
 
 test('successive dives retain the exact target and viewport at over 500 digits',()=>{
  const root=presets['(-1,2,2,3)'];

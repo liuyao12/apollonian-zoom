@@ -38,7 +38,8 @@ canvas{display:block;background:white}
 .switch input:disabled+.slider{opacity:.45}
 #canvas{margin-left:var(--sidebar-width);width:calc(100% - var(--sidebar-width));height:100%;touch-action:none;cursor:grab}
 #canvas.interacting{cursor:grabbing}
-#home-button{position:fixed;z-index:9;top:max(12px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));width:46px;height:46px;padding:0;border:1px solid #aaa;border-radius:50%;background:rgba(255,255,255,.94);color:#111;box-shadow:0 2px 7px #0002;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+#navigation-tools{position:fixed;z-index:9;top:max(12px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));display:flex;align-items:center;gap:6px}
+#home-button{width:46px;height:46px;padding:0;border:1px solid #aaa;border-radius:50%;background:rgba(255,255,255,.94);color:#111;box-shadow:0 2px 7px #0002;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 #home-button svg{display:block;width:22px;height:22px;margin:auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #home-button:hover{background:#f2f2f2}
 #home-button:active{transform:translateY(1px)}
@@ -54,9 +55,9 @@ canvas{display:block;background:white}
 .residue-button:disabled{background:#e7e7e7;border-color:#d1d1d1;color:#aaa;cursor:not-allowed}
 .residue-button:focus-visible{outline:2px solid #2673d9;outline-offset:1px}
 #zoom-tools{position:fixed;z-index:9;left:calc(var(--sidebar-width) + 12px);top:max(12px,env(safe-area-inset-top));display:flex;gap:5px}
-#zoom-tools button,#copy-value{min-height:40px;border:1px solid #bbb;border-radius:6px;background:#fff;color:#222;padding:0 12px;font:600 12px sans-serif;cursor:pointer;touch-action:manipulation}
+#zoom-tools button,#dive-button,#copy-value{min-height:40px;border:1px solid #bbb;border-radius:6px;background:#fff;color:#222;padding:0 12px;font:600 12px sans-serif;cursor:pointer;touch-action:manipulation}
 #zoom-tools button:hover,#copy-value:hover{background:#f2f4f6}
-#zoom-tools #dive-button{background:#172d46;color:#fff;border-color:#172d46}
+#dive-button{background:#172d46;color:#fff;border-color:#172d46}
 #zoom-status{position:fixed;z-index:8;left:calc(var(--sidebar-width) + 12px);bottom:14px;max-width:calc(100% - var(--sidebar-width) - 24px);padding:7px 10px;background:#fffffff0;border:1px solid #ddd;border-radius:6px;color:#444;font-size:11px;pointer-events:none}
 #inspector{position:fixed;z-index:12;right:12px;top:70px;width:min(360px,calc(100% - var(--sidebar-width) - 24px));max-height:calc(100% - 250px);overflow:auto;padding:14px;background:#fff;border:1px solid #bbb;border-radius:9px;box-shadow:0 3px 20px #0002}
 .inspector-header{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;font-weight:700}
@@ -99,7 +100,10 @@ canvas{display:block;background:white}
 <div id="zoom-tools" aria-label="Zoom controls">
 <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
 <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+</div>
+<div id="navigation-tools" role="group" aria-label="View navigation">
 <button id="dive-button" type="button">Dive deeper</button>
+<button id="home-button" type="button" aria-label="Return to home view" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3.8l8.5 6.7M5.8 9.2v10.5h12.4V9.2M9.5 19.7v-6.2h5v6.2"/></svg></button>
 </div>
 <div id="zoom-status" role="status"></div>
 <aside id="inspector" aria-label="Exact circle values" hidden>
@@ -107,13 +111,12 @@ canvas{display:block;background:white}
 <div id="exact-value"></div>
 <button id="copy-value" type="button">Copy exact values</button>
 </aside>
-<button id="home-button" type="button" aria-label="Return to home view" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3.8l8.5 6.7M5.8 9.2v10.5h12.4V9.2M9.5 19.7v-6.2h5v6.2"/></svg></button>
 <section id="residue-panel" aria-label="Curvature residue classes modulo 24">
 <div class="residue-title">Local–global mod 24</div>
 <div class="residue-help">Rows mod 3 · columns mod 8</div>
 <div id="residue-buttons"></div>
 </section>
 <script src="vendor/katex/katex.min.js"></script>
-<script type="module" src="src/main.js?v=interior-fills"></script>
+<script type="module" src="src/main.js?v=animated-dive"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@ import {ARC_LINE_TOLERANCE_PX,circleBoundaryPrimitive} from './circleRenderer.js
 import {placeVisibleLabel} from './labelPlacement.js?v=interior-fills';
 
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
+const MAX_SAFE_BIGINT=BigInt(Number.MAX_SAFE_INTEGER);
 
 function abs(n){return n<0n?-n:n;}
 // Projection only needs an exact numerator/denominator ratio, not a reduced
@@ -28,6 +29,10 @@ function binaryExponent(a){return a.n===0n?-Infinity:bitLength(a.n)-bitLength(a.
 export function scaledRatioToNumber(n,d,power=0){
  if(n===0n)return 0;
  let sign=1;if(n<0n){sign=-1;n=-n;}if(d<0n){sign=-sign;d=-d;}
+ // At ordinary zoom levels both integers convert exactly. Avoid measuring
+ // their binary lengths on every projection and traversal check.
+ if(n<=MAX_SAFE_BIGINT&&d<=MAX_SAFE_BIGINT&&power>=-1022&&power<=1023)
+  return sign*(Number(n)/Number(d))*2**power;
  const nBits=bitLength(n),dBits=bitLength(d);
  const nShift=Math.max(0,nBits-54),dShift=Math.max(0,dBits-54);
  const leading=Number(n>>BigInt(nShift))/Number(d>>BigInt(dShift));
@@ -130,6 +135,26 @@ export function projectCircle(c,camera){
  const center=projectPoint(pointForCircle(c),camera);
  const r=camera.scale.mantissa*scaledRatioToNumber(1n,abs(c.b),camera.scale.exponent);
  return {...center,r,b:c.b};
+}
+
+export function zoomPathToCircle(start,target,width,height,targetScale){
+ const cx=width/2,cy=height/2,end=cameraForCircle(target,cx,cy,targetScale);
+ const octaves=end.scale.exponent-start.scale.exponent+Math.log2(end.scale.mantissa/start.scale.mantissa);
+ // Anchor at the more magnified end. Its center can be projected into the
+ // wider view without losing the small offsets at the deep end of a dive.
+ const zoomIn=octaves>=0;
+ const anchor=zoomIn?pointForCircle(target):worldPointAt(start,cx,cy);
+ const widePosition=projectPoint(anchor,zoomIn?start:end);
+ const startMantissaLog=Math.log2(start.scale.mantissa);
+ return progress=>{
+  if(progress<=0)return start;
+  if(progress>=1)return end;
+  const level=startMantissaLog+octaves*progress,shift=Math.floor(level);
+  const offsetWeight=zoomIn?1-progress:progress;
+  return {anchorX:anchor.x,anchorY:anchor.y,
+   screenX:cx+(widePosition.x-cx)*offsetWeight,screenY:cy+(widePosition.y-cy)*offsetWeight,
+   scale:{mantissa:2**(level-shift),exponent:start.scale.exponent+shift}};
+ };
 }
 
 export function reanchorCamera(camera,c,screenPoint=projectCircle(c,camera)){
