@@ -2,8 +2,8 @@ import {toFloat,generate} from './apollonianBigInt.js';
 import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,projectedBoundary,projectedDiskRegion,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt,zoomPathToCircle} from './exactViewport.js?v=gap-fill';
-import {clipHalfPlane,placeVisibleLabel} from './labelPlacement.js?v=interior-fills';
+import {cameraForCircle,projectedBoundary,projectedDiskRegion,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt,zoomPathToCircle} from './exactViewport.js?v=scaling-labels';
+import {clipHalfPlane,placeVisibleLabel} from './labelPlacement.js?v=scaling-labels';
 import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
 import {randomRootCurvatures} from './randomConfig.js';
@@ -20,11 +20,14 @@ const customCancel=document.getElementById('custom-cancel');
 const customError=document.getElementById('custom-error');
 const residueButtons=document.getElementById('residue-buttons');
 const inspector=document.getElementById('inspector'),exactValue=document.getElementById('exact-value');
+const inspectorFactors=document.getElementById('inspector-factors');
 const zoomStatus=document.getElementById('zoom-status');
 let selectedCircle=null,homeScaleLog=0,pointerStart=null;
 const MIN_CIRCLE_RADIUS_PX=2;
 const PRIME_GLOW_MIN_RADIUS_PX=5;
 const RESIDUE_PALETTE=['#1565c0','#c44e00','#14805e','#b13b72','#6f42c1','#8c564b','#00838f','#c62828'];
+const FACTOR_INKS_LIGHT=['#fff2ad','#c8fff2','#ffded0','#e0edff','#f7dbff','#ffe8c1','#dcffcb'];
+const FACTOR_INKS_DARK=['#674600','#006557','#8d3224','#194c87','#712d80','#7d4521','#356118'];
 const WHEEL_ZOOM_SENSITIVITY=.001;
 const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
@@ -37,26 +40,22 @@ const presetBends=Object.keys(presets).map(name=>parseCurvatures(name));
 const pointers=new Map();let gesture=null;
 let navigationFrame=null;
 
-const factorWorker=new Worker(new URL('./factorWorker.js',import.meta.url),{type:'module'});
-const factorCache=new Map(),factorQueue=[],factorQueued=new Set();
-let factorLabels=false,factorActive=null;
-const primeWorker=new Worker(new URL('./factorWorker.js',import.meta.url),{type:'module'});
+const factorWorkerURL=new URL('./factorWorker.js?v=live-factors',import.meta.url);
+const factorWorker=new Worker(factorWorkerURL,{type:'module'});
+const factorCache=new Map();
+let factorLabels=false,factorTargets=new Set();
+const primeWorker=new Worker(factorWorkerURL,{type:'module'});
 const primeCache=new Map(),primeQueue=[],primeQueued=new Set();
 let primeActive=null;
 
-function pumpFactorQueue(){
- if(factorActive!==null||factorQueue.length===0)return;
- factorActive=factorQueue.shift();factorQueued.delete(factorActive);
- factorWorker.postMessage({value:factorActive});
+function syncFactorTargets(wanted){
+ if(wanted.size===factorTargets.size&&[...wanted].every(key=>factorTargets.has(key)))return;
+ for(const key of factorTargets){
+  if(!wanted.has(key)&&factorCache.get(key)?.complete===false)factorCache.delete(key);
+ }
+ factorTargets=wanted;
+ factorWorker.postMessage({values:[...wanted]});
 }
-
-function requestFactors(value){
- const key=value.toString();
- if(factorCache.has(key)||factorActive===key||factorQueued.has(key))return;
- factorQueue.push(key);factorQueued.add(key);pumpFactorQueue();
-}
-
-function resetFactorQueue(){factorQueue.length=0;factorQueued.clear();}
 
 function requestWorkerDraw(){
  if(!factorLabels||workerDrawFrame!==null)return;
@@ -64,20 +63,21 @@ function requestWorkerDraw(){
 }
 
 factorWorker.onmessage=e=>{
- const {value,terms,prime}=e.data;
- factorCache.set(value,terms);factorActive=null;
+ const {value,terms,prime,complete}=e.data;
+ if(!complete&&(!factorTargets.has(value)||factorCache.get(value)?.complete))return;
+ factorCache.set(value,{terms,complete});
  if(typeof prime==='boolean')primeCache.set(value,prime);
- requestWorkerDraw();pumpFactorQueue();
+ requestWorkerDraw();
 };
 
 factorWorker.onerror=()=>{
- factorActive=null;resetFactorQueue();factorLabels=false;
+ factorLabels=false;
  factorToggle.checked=false;factorToggle.disabled=true;
  draw();
 };
 
 factorToggle.onchange=()=>{
- factorLabels=factorToggle.checked;resetFactorQueue();
+ factorLabels=factorToggle.checked;
  if(factorLabels)update();
  else resetPrimeQueue();
  draw();
@@ -162,7 +162,6 @@ function renderResidues(){
 }
 
 function update(){
- resetFactorQueue();
  while(viewStage.parent&&stageNeedsParent(viewStage,camera,canvas.width,canvas.height))viewStage=viewStage.parent;
  // The root still bounds the background when a deep view omits its boundary.
  const outer=currentConfig.find(circle=>circle.b<0n);
@@ -202,20 +201,50 @@ function resize(){
 }
 addEventListener('resize',resize);
 
-function labelTerms(value){
- if(!factorLabels)return [value.toString()];
- const key=value.toString(),cached=factorCache.get(key);
- if(cached)return cached;
- requestFactors(value);return [key];
+function factorInk(term,palette,defaultInk){
+ if(term==='-1'||term==='1'||term==='0')return defaultInk;
+ let index=0;
+ for(const digit of term){
+  if(digit<'0'||digit>'9')break; // A power uses its prime base's color.
+  index=(index*10+Number(digit))%palette.length;
+ }
+ return palette[index];
 }
 
-function rowWidth(terms,fontSize){
+function factorInks(terms,complete,lightBackground,normalInk){
+ const palette=lightBackground?FACTOR_INKS_DARK:FACTOR_INKS_LIGHT;
+ return terms.map((term,i)=>{
+  if(!complete&&i===terms.length-1)return lightBackground?'#636363':'#d4d4d4';
+  return factorInk(term,palette,normalInk);
+ });
+}
+
+function updateInspectorFactors(wanted){
+ inspectorFactors.hidden=!factorLabels||!selectedCircle||inspector.hidden;
+ if(inspectorFactors.hidden)return;
+ const key=selectedCircle.b.toString(),factors=factorCache.get(key),terms=factors?.terms??[key];
+ if(!factors?.complete)wanted.add(key);
+ const inks=factorInks(terms,factors?.complete,true,'#222');
+ const tex=terms.map((term,i)=>{
+  const value=term.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+$/,power=>
+   '^{'+[...power].map(d=>'⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(d)).join('')+'}');
+  return `\\textcolor{${inks[i]}}{${value}}`;
+ }).join(' \\cdot ');
+ const math=inspectorFactors.lastElementChild;
+ if(math.dataset.tex!==tex){
+  katex.render(tex,math,{throwOnError:false,output:'htmlAndMathml'});math.dataset.tex=tex;
+ }
+ inspectorFactors.firstElementChild.textContent=factors?.complete?'Prime factors':'Prime factors (factoring…)';
+}
+
+function rowWidth(terms,fontSize,leadingDot){
  ctx.font=fontSize+'px sans-serif';
  let width=terms.reduce((sum,term)=>sum+ctx.measureText(term).width,0);
- if(terms.length>1){
+ const dotCount=terms.length-1+Number(leadingDot);
+ if(dotCount){
   const gap=fontSize*.09,dotSize=fontSize*.5;
   ctx.font=dotSize+'px sans-serif';
-  width+=(terms.length-1)*(ctx.measureText('·').width+2*gap);
+  width+=dotCount*(ctx.measureText('·').width+2*gap);
  }
  return width;
 }
@@ -223,7 +252,7 @@ function rowWidth(terms,fontSize){
 function layoutAtSize(terms,fontSize,r){
  const innerRadius=r*.8,lineHeight=fontSize*1.08,n=terms.length;
  const widths=Array.from({length:n},()=>Array(n+1).fill(0));
- for(let start=0;start<n;start++)for(let end=start+1;end<=n;end++)widths[start][end]=rowWidth(terms.slice(start,end),fontSize);
+ for(let start=0;start<n;start++)for(let end=start+1;end<=n;end++)widths[start][end]=rowWidth(terms.slice(start,end),fontSize,start>0);
 
  for(let lineCount=1;lineCount<=n;lineCount++){
   const available=[];let fitsHeight=true;
@@ -250,30 +279,47 @@ function layoutAtSize(terms,fontSize,r){
  return null;
 }
 
-function drawFittedLabel(terms,x,y,r){
+function drawFittedLabel(terms,x,y,r,preferredFontSize=r*.48,inks){
  // Wrap long integers in either mode, including pending factorizations and
  // large prime factors. A multiplication dot starts each subsequent factor;
  // continuation rows have no dot, and powers stay with their final digits.
- if(terms.some(term=>term.length>14)){
+ if(terms.length>12||terms.some(term=>term.length>14)){
   const columns=Math.ceil(Math.sqrt(terms.reduce((sum,term)=>sum+term.length,0)*1.8));
-  const rows=terms.flatMap((term,index)=>{
+  const rows=[];
+  let row;
+  terms.forEach((term,index)=>{
    const [,digits,power='']=term.match(/^(-?\d+)([⁰¹²³⁴⁵⁶⁷⁸⁹]*)$/)||[null,term];
    const chunks=digits.match(new RegExp(`.{1,${columns}}`,'g'));
    chunks[chunks.length-1]+=power;
    if(index)chunks[0]='· '+chunks[0];
-   return chunks;
+   for(const chunk of chunks){
+    if(!row||row.length+1+chunk.length>columns){
+     row={runs:[],length:0};rows.push(row);
+    }
+    const text=(row.length?' ':'')+chunk;
+    row.runs.push({text,ink:inks?.[index]});row.length+=text.length;
+   }
   });
   const longest=Math.max(...rows.map(row=>row.length));
-  const fontSize=Math.min(18,r*1.2/Math.max(longest*.62,rows.length*1.15));
+  const fontSize=Math.min(preferredFontSize,r*1.2/Math.max(longest*.62,rows.length*1.15));
   if(fontSize<7)return;
   ctx.font=fontSize+'px monospace';
-  rows.forEach((row,i)=>ctx.fillText(row,x,y+(i-(rows.length-1)/2)*fontSize*1.15));
+  rows.forEach((row,i)=>{
+   const widths=row.runs.map(run=>ctx.measureText(run.text).width);
+   let cursor=x-widths.reduce((sum,w)=>sum+w,0)/2;
+   const rowY=y+(i-(rows.length-1)/2)*fontSize*1.15;
+   row.runs.forEach((run,j)=>{
+    if(run.ink)ctx.fillStyle=run.ink;
+    ctx.fillText(run.text,cursor+widths[j]/2,rowY);cursor+=widths[j];
+   });
+  });
   return;
  }
- let low=.5,high=Math.min(40,r*.48),layout=null;
+ let low=0,high=Math.min(preferredFontSize,r*1.6),layout=null;
  if(terms.length===1){
   ctx.font=high+'px sans-serif';
   if(Math.hypot(ctx.measureText(terms[0]).width,high)<=r*1.6){
+   if(inks)ctx.fillStyle=inks[0];
    ctx.fillText(terms[0],x,y);return;
   }
  }
@@ -282,11 +328,13 @@ function drawFittedLabel(terms,x,y,r){
   if(candidate){layout=candidate;low=size;}else high=size;
  }
  if(!layout)return;
+ let index=0;
  layout.rows.forEach((row,rowIndex)=>{
   const rowY=y+(rowIndex-(layout.rows.length-1)/2)*layout.lineHeight;
   let cursor=x-row.width/2;
-  row.terms.forEach((term,termIndex)=>{
-   if(termIndex){
+  row.terms.forEach(term=>{
+   if(inks)ctx.fillStyle=inks[index];
+   if(index>0){
     const gap=layout.fontSize*.09,dotSize=layout.fontSize*.5;
     cursor+=gap;ctx.font=dotSize+'px sans-serif';
     const dotWidth=ctx.measureText('·').width;
@@ -295,6 +343,7 @@ function drawFittedLabel(terms,x,y,r){
    ctx.font=layout.fontSize+'px sans-serif';
    const termWidth=ctx.measureText(term).width;
    ctx.fillText(term,cursor+termWidth/2,rowY);cursor+=termWidth;
+   index++;
   });
  });
 }
@@ -347,23 +396,32 @@ function draw(){
  }
  ctx.strokeStyle='#000';ctx.lineWidth=2;
  for(const {boundary} of projectedCircles)strokeProjectedBoundary(boundary);
+ const wantedFactors=new Set();
  for(const {circle,region,residue} of projectedCircles){
-  let labelRegion=region,terms;
-  // Outer labels always use their full-scale layout. Size the placement box
-  // from that text, independently of the available exterior or camera zoom.
+  let labelRegion=region,preferredFontSize;
+  const key=circle.b.toString(),factors=factorLabels?factorCache.get(key):null;
+  const terms=factors?.terms??[key];
   if(region.outside){
-   terms=labelTerms(circle.b);
-   ctx.font='38.4px sans-serif';
-   const labelRadius=Math.min(80,Math.max(32,Math.hypot(ctx.measureText(terms.join(' · ')).width,44)/2));
-   labelRegion={...region,labelRadius};
+   // Reserve space next to the enclosing circle for the actual text width.
+   preferredFontSize=.48*Math.min(region.r??Infinity,Math.hypot(canvas.width,canvas.height));
+   ctx.font=preferredFontSize+'px sans-serif';
+   const width=ctx.measureText(terms.join(' · ')).width;
+   labelRegion={...region,labelRadius:Math.hypot(width,preferredFontSize)/1.6};
   }
   const label=placeVisibleLabel(labelRegion,labelRects);
   if(!label)continue;
   const highlighted=!filtering||selectedResidues.has(residue);
   const labelColor=region.outside?residueColors.get(residue):'#fff';
-  ctx.fillStyle=highlighted?labelColor:'#626262';
-  drawFittedLabel(terms??labelTerms(circle.b),label.x,label.y,region.outside?80:label.r);
+  const normalInk=highlighted?labelColor:'#626262';
+  ctx.fillStyle=normalInk;
+  let inks;
+  if(factorLabels){
+   if(!factors?.complete)wantedFactors.add(key);
+   inks=factorInks(terms,factors?.complete,region.outside||!highlighted,normalInk);
+  }
+  drawFittedLabel(terms,label.x,label.y,label.r,preferredFontSize,inks);
  }
+ updateInspectorFactors(wantedFactors);syncFactorTargets(wantedFactors);
  if(selectedCircle){
   ctx.save();ctx.lineWidth=3;
   strokeProjectedBoundary(projectedBoundary(selectedCircle,camera,canvas.width,canvas.height));ctx.restore();

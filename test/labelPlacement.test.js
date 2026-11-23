@@ -105,19 +105,21 @@ test('a diagonal off-screen outer center labels along the opposite ray',()=>{
  assert.ok(Math.abs(Math.hypot(label.x-shape.x,label.y-shape.y)-650-label.r-8)<1e-6);
 });
 
-test('negative label size is constant for full, clipped, and straight boundaries',()=>{
- const shapes=[
-  {type:'disk',x:200,y:200,r:100,outside:true},
-  {type:'disk',x:-300,y:200,r:500,outside:true},
-  {type:'halfPlane',nx:1,ny:0,offset:-200,outside:true}
- ];
- for(const shape of shapes){
-  const label=placeVisibleLabel(shape,rects);
-  assert.ok(label);assert.equal(label.r,48);
- }
+test('exterior label space scales with the circle while there is room',()=>{
+ const largeViewport=viewport(1200,1200);
+ const shape={type:'disk',x:600,y:600,r:60,outside:true};
+ const small=placeVisibleLabel(shape,largeViewport);
+ const large=placeVisibleLabel({...shape,r:120},largeViewport);
+ assert.equal(small.r,60);assert.equal(large.r,2*small.r);
 });
 
-test('a narrow exterior never shrinks a negative label',()=>{
+test('a clipped exterior label fits the available space beside a straight edge',()=>{
+ const label=placeVisibleLabel({type:'halfPlane',nx:1,ny:0,offset:-300,outside:true},rects);
+ assert.ok(label.r>40&&label.r<=42);
+ assert.ok(label.x-label.r>=308&&label.x+label.r<=392);
+});
+
+test('a narrow exterior hides a label when there is no readable space',()=>{
  const label=placeVisibleLabel({type:'halfPlane',nx:1,ny:0,offset:-380,outside:true},rects);
  assert.equal(label,null);
 });

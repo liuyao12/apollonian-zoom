@@ -1,5 +1,6 @@
 function abs(n){return n<0n?-n:n;}
 function gcd(a,b){a=abs(a);b=abs(b);while(b){const r=a%b;a=b;b=r;}return a;}
+const smallPrimes=[2n,3n,5n,7n,11n,13n,17n,19n,23n,29n,31n,37n];
 
 function modPow(base,exponent,modulus){
  let result=1n;base%=modulus;
@@ -13,11 +14,10 @@ function modPow(base,exponent,modulus){
 export function isProbablePrime(n){
  n=BigInt(n);
  if(n<2n)return false;
- const small=[2n,3n,5n,7n,11n,13n,17n,19n,23n,29n,31n,37n];
- for(const p of small){if(n===p)return true;if(n%p===0n)return false;}
+ for(const p of smallPrimes){if(n===p)return true;if(n%p===0n)return false;}
  let d=n-1n,s=0;
  while((d&1n)===0n){d>>=1n;s++;}
- for(const base of small){
+ for(const base of smallPrimes){
   if(base>=n-1n)continue;
   let x=modPow(base,d,n);
   if(x===1n||x===n-1n)continue;
@@ -28,50 +28,62 @@ export function isProbablePrime(n){
  return true;
 }
 
-function pollardRho(n,budget){
- if(n%2n===0n)return 2n;
- if(n%3n===0n)return 3n;
- for(let attempt=1n;attempt<=24n;attempt++){
+function* pollardRho(n){
+ for(let attempt=1n;;attempt++){
   const c=attempt,x0=2n+attempt;
   let x=x0%n,y=x,d=1n;
-  while(d===1n&&budget.remaining-- > 0){
+  while(d===1n){
    x=(x*x+c)%n;
    y=(y*y+c)%n;y=(y*y+c)%n;
    d=gcd(x-y,n);
+   yield null;
   }
   if(d>1n&&d<n)return d;
-  if(budget.remaining<=0)break;
  }
- throw new Error('factorization budget exceeded');
+}
+
+// A prime is ready to display. A null step lets the worker pause the rho
+// search here and resume with the same iterates after serving another label.
+export function* primeFactorSteps(value){
+ let n=abs(BigInt(value));
+ if(n<2n)return;
+ for(const prime of smallPrimes){
+  while(n%prime===0n){n/=prime;yield prime;}
+ }
+ const parts=[n];
+ while(parts.length){
+  const part=parts.pop();
+  if(part===1n)continue;
+  if(isProbablePrime(part)){yield part;continue;}
+  const divisor=yield* pollardRho(part),other=part/divisor;
+  if(divisor<other)parts.push(other,divisor);else parts.push(divisor,other);
+ }
 }
 
 export function factorize(value,maxIterations=500000){
- let n=abs(BigInt(value));
+ const n=abs(BigInt(value)),factors=[];
  if(n<2n)return [n];
- const factors=[],budget={remaining:maxIterations};
- function split(part){
-  if(part===1n)return;
-  if(isProbablePrime(part)){factors.push(part);return;}
-  const divisor=pollardRho(part,budget);
-  split(divisor);split(part/divisor);
+ for(const step of primeFactorSteps(n)){
+  if(step!==null)factors.push(step);
+  else if(--maxIterations<0)throw new Error('factorization budget exceeded');
  }
- split(n);factors.sort((a,b)=>a<b?-1:a>b?1:0);
- return factors;
+ return factors.sort((a,b)=>a<b?-1:a>b?1:0);
 }
 
 const superscripts={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
 function superscript(n){return String(n).split('').map(d=>superscripts[d]).join('');}
 
-export function formatFactorTerms(value){
- const n=BigInt(value),factors=factorize(n);
+export function formatFactorTerms(value,factors=factorize(value),remaining=1n){
+ const n=BigInt(value);
  if(n>=-1n&&n<=1n)return [n.toString()];
  const powers=[];
- for(const factor of factors){
+ for(const factor of [...factors].sort((a,b)=>a<b?-1:a>b?1:0)){
   const last=powers[powers.length-1];
   if(last&&last.factor===factor)last.exponent++;
   else powers.push({factor,exponent:1});
  }
  const terms=powers.map(({factor,exponent})=>factor+(exponent>1?superscript(exponent):''));
  if(n<0n)terms.unshift('-1');
+ if(remaining>1n)terms.push(remaining.toString());
  return terms;
 }

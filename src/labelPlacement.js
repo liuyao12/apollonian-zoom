@@ -82,7 +82,7 @@ function exteriorLabel(shape,rect){
    const point={x:shape.x+dx/length*distance,y:shape.y+dy/length*distance};
    return fitsViewport(point,radius,rect)?point:null;
   };
-  const label=fitBoundaryLabel(candidate,shape.labelRadius);
+  const label=fitBoundaryLabel(candidate,shape,rect);
   if(label)return label;
  }
  return null;
@@ -92,10 +92,20 @@ function fitsViewport(point,radius,rect){
  return point.x-radius>=rect.left+8&&point.x+radius<=rect.right-8&&
   point.y-radius>=rect.top+8&&point.y+radius<=rect.bottom-8;
 }
-function fitBoundaryLabel(candidate,radius=48){
- // Keep the full-scale label space fixed: navigation only moves the label.
- const point=candidate(radius);
- return point?{...point,r:radius}:null;
+function fitBoundaryLabel(candidate,shape,rect){
+ // A boundary label needs room on the exterior side as well as in the viewport.
+ let high=Math.min(shape.labelRadius??shape.r??Infinity,(rect.right-rect.left)/2-8,(rect.bottom-rect.top)/2-8);
+ let low=10;
+ if(high<low)return null;
+ const full=candidate(high);
+ if(full)return {...full,r:high};
+ let point=candidate(low);
+ if(!point)return null;
+ for(let i=0;i<12;i++){
+  const radius=(low+high)/2,fit=candidate(radius);
+  if(fit){point=fit;low=radius;}else high=radius;
+ }
+ return {...point,r:low};
 }
 
 function exteriorLineLabel(shape,rect){
@@ -116,7 +126,7 @@ function exteriorLineLabel(shape,rect){
   return {x:points.reduce((sum,p)=>sum+p.x,0)/points.length,
    y:points.reduce((sum,p)=>sum+p.y,0)/points.length};
  };
- return fitBoundaryLabel(candidate,shape.labelRadius);
+ return fitBoundaryLabel(candidate,shape,rect);
 }
 
 export function placeVisibleLabel(shape,rects){

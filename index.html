@@ -81,7 +81,7 @@ canvas{display:block;background:white}
 <div id="sidebar">
 <div class="app-title">Apollonian Circle Packings</div>
 <div class="explore-help">Scroll or pinch to zoom. Drag to pan. Click a circle for exact values; double-click to focus. Dive deeper explores a smaller gap.</div>
-<label class="factor-control">
+<label class="factor-control" title="Known prime factors appear in color. Gray digits are still being factored.">
 <span>Prime factors</span>
 <span class="switch"><input id="factor-toggle" type="checkbox" role="switch"><span class="slider" aria-hidden="true"></span></span>
 </label>
@@ -109,6 +109,7 @@ canvas{display:block;background:white}
 <aside id="inspector" aria-label="Exact circle values" hidden>
 <div class="inspector-header"><span id="inspector-title">Exact circle</span><button id="inspector-close" type="button" aria-label="Close exact values">×</button></div>
 <div id="exact-value"></div>
+<div id="inspector-factors" hidden><div class="value-title">Prime factors</div><div class="exact-math"></div></div>
 <button id="copy-value" type="button">Copy exact values</button>
 </aside>
 <section id="residue-panel" aria-label="Curvature residue classes modulo 24">
@@ -117,6 +118,6 @@ canvas{display:block;background:white}
 <div id="residue-buttons"></div>
 </section>
 <script src="vendor/katex/katex.min.js"></script>
-<script type="module" src="src/main.js?v=gap-fill"></script>
+<script type="module" src="src/main.js?v=live-factors"></script>
 </body>
 </html>

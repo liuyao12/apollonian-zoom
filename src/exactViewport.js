@@ -1,6 +1,6 @@
 import {circle,reflect} from './apollonianBigInt.js';
 import {ARC_LINE_TOLERANCE_PX,circleBoundaryPrimitive} from './circleRenderer.js';
-import {placeVisibleLabel} from './labelPlacement.js?v=interior-fills';
+import {placeVisibleLabel} from './labelPlacement.js?v=scaling-labels';
 
 const TAU=2*Math.PI,ANGLE_EPSILON=1e-10;
 const MAX_SAFE_BIGINT=BigInt(Number.MAX_SAFE_INTEGER);
@@ -466,7 +466,7 @@ export function projectedDiskRegion(c,camera,width,height,outside=c.b<0n){
  return {type:'halfPlane',nx,ny,outside,offset:direction*tangent.signed-nx*width/2-ny*height/2};
 }
 
-export function projectedLabelPlacement(c,camera,width,height,rects,labelRadius=48){
+export function projectedLabelPlacement(c,camera,width,height,rects,labelRadius){
  const region=projectedDiskRegion(c,camera,width,height);
  return placeVisibleLabel({...region,labelRadius},rects);
 }
