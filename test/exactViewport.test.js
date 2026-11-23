@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {reflect} from '../src/apollonianBigInt.js';
 import {presets} from '../src/presets.js';
-import {cameraForCircle,giantCircleLine,projectedBoundary,projectCircle,reanchorCamera,scaledRatioToNumber,scaleFromBigInt,stageNeedsParent,traversalStage,visibleTreeProjected,worldPointAt,zoomCameraAt} from '../src/exactViewport.js';
+import {cameraForCircle,giantCircleLine,projectedBoundary,projectedDiskRegion,projectCircle,reanchorCamera,scaledRatioToNumber,scaleFromBigInt,stageNeedsParent,traversalStage,visibleTreeProjected,worldPointAt,zoomCameraAt} from '../src/exactViewport.js';
 
 test('projects small ratios even when the binary scale alone would overflow or underflow',()=>{
  assert.equal(scaledRatioToNumber(-3n,8n,4),-6);
@@ -81,6 +81,19 @@ test('leaves a viewport wholly outside the packing empty',()=>{
   camera.anchorX={n:10n,d:1n};
   assert.equal(visibleTreeProjected(root,camera,1000,700).length,0);
  }
+});
+
+test('projects the packing interior at extreme zoom on both sides of its boundary',()=>{
+ const outer=presets['(-1,2,2,3)'][0],camera=cameraForCircle(outer,500,350,scaleFromBigInt(1n<<2000n));
+ const interior=()=>projectedDiskRegion(outer,camera,1000,700,false);
+ assert.equal(interior().type,'rectangle');
+ camera.anchorX={n:1n,d:1n};
+ const edge=interior();
+ assert.equal(edge.type,'halfPlane');
+ assert.ok(edge.nx*490+edge.ny*350+edge.offset>0);
+ assert.ok(edge.nx*510+edge.ny*350+edge.offset<0);
+ camera.anchorX={n:10n,d:1n};
+ assert.equal(interior().type,'empty');
 });
 
 test('draws an overflowing ancestor circle as its local tangent line',()=>{

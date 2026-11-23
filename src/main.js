@@ -2,7 +2,7 @@ import {toFloat,generate} from './apollonianBigInt.js';
 import {descendConfiguration,exactCircleValues} from './deepNavigation.js';
 import {presets} from './presets.js';
 import {completeCurvatures,configurationFromCurvatures,parseCurvatures} from './customConfig.js';
-import {cameraForCircle,projectedBoundary,projectedDiskRegion,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt,zoomPathToCircle} from './exactViewport.js?v=animated-dive';
+import {cameraForCircle,projectedBoundary,projectedDiskRegion,projectCircle,scaleFromBigInt,scaleFromNumber,scaleLog,stageNeedsParent,traversalStage,visibleTreeProjected,zoomCameraAt,zoomPathToCircle} from './exactViewport.js?v=gap-fill';
 import {clipHalfPlane,placeVisibleLabel} from './labelPlacement.js?v=interior-fills';
 import {circleBoundaryPrimitive} from './circleRenderer.js';
 import {admissibleResidues,residueFromMod3Mod8,residueMod} from './residueClasses.js';
@@ -30,7 +30,7 @@ const HOME_WHEEL_DELTA_PER_SECOND=600,HOME_MIN_DURATION_MS=400;
 const HOME_RECENTER_DURATION_MS=650;
 const DIVE_DURATION_MS=2200;
 let current=Object.keys(presets)[0],currentConfig=presets[current],viewStage=traversalStage(currentConfig),circles=[],camera=null;
-let projectedCircles=[],workerDrawFrame=null;
+let projectedCircles=[],packingInterior,workerDrawFrame=null;
 let allowedResidues=new Set(),residueColors=new Map(),selectedResidues=new Set();
 const customConfigs=[];
 const presetBends=Object.keys(presets).map(name=>parseCurvatures(name));
@@ -164,6 +164,9 @@ function renderResidues(){
 function update(){
  resetFactorQueue();
  while(viewStage.parent&&stageNeedsParent(viewStage,camera,canvas.width,canvas.height))viewStage=viewStage.parent;
+ // The root still bounds the background when a deep view omits its boundary.
+ const outer=currentConfig.find(circle=>circle.b<0n);
+ packingInterior=projectedDiskRegion(outer,camera,canvas.width,canvas.height,false);
  circles=visibleTreeProjected(viewStage.config,camera,canvas.width,canvas.height,MIN_CIRCLE_RADIUS_PX,
   viewStage.blockedIndex,viewStage.bridgeCircles,factorLabels);
  // Filters and factor results repaint the same viewport geometry.
@@ -304,12 +307,11 @@ function strokeProjectedBoundary(boundary){
  ctx.stroke();
 }
 
-function fillDiskRegion(region,boundary,viewport){
+function fillDiskRegion(region,viewport){
  if(region.outside)return;
  ctx.beginPath();
  if(region.type==='disk'){
-  if(boundary.type!=='arc')return;
-  ctx.arc(boundary.x,boundary.y,boundary.r,0,2*Math.PI);
+  ctx.arc(region.x,region.y,region.r,0,2*Math.PI);
   ctx.fill();
  }else if(region.type==='halfPlane'){
   const polygon=clipHalfPlane(region,viewport);
@@ -327,10 +329,11 @@ function draw(){
  ctx.textAlign='center';ctx.textBaseline='middle';
  const filtering=selectedResidues.size>0;
  const labelRects=[{left:0,right:canvas.width,top:0,bottom:canvas.height}];
- for(const {region,boundary,residue} of projectedCircles){
+ ctx.fillStyle='#d9d9d9';fillDiskRegion(packingInterior,labelRects[0]);
+ for(const {region,residue} of projectedCircles){
   const highlighted=!filtering||selectedResidues.has(residue);
   ctx.fillStyle=highlighted?residueColors.get(residue):'#ededed';
-  fillDiskRegion(region,boundary,labelRects[0]);
+  fillDiskRegion(region,labelRects[0]);
  }
  if(factorLabels)for(const {circle,region,boundary,residue} of projectedCircles){
   const r=region.r??Infinity;

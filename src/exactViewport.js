@@ -452,8 +452,7 @@ export function projectedBoundary(c,camera,width,height,tolerance=ARC_LINE_TOLER
  return circleBoundaryPrimitive(p.x,p.y,p.r,width,height);
 }
 
-export function projectedDiskRegion(c,camera,width,height){
- const outside=c.b<0n;
+export function projectedDiskRegion(c,camera,width,height,outside=c.b<0n){
  if(!circleLooksStraight(c,camera,width,height)){
   return {type:'disk',...projectCircle(c,camera),outside};
  }
